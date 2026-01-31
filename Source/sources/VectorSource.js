@@ -7,6 +7,8 @@ import Pbf from 'pbf'
 export class VectorSource extends ISource {
     constructor(styleSource, path) {
         super(styleSource, path)
+        /**@type {Cesium.WebMercatorTilingScheme} */
+        this.tilingScheme = new Cesium.WebMercatorTilingScheme()
     }
 
     async init() {
@@ -30,6 +32,10 @@ export class VectorSource extends ISource {
     async requestTile(x, y, z) {
         const sourceParams = this.styleSource
         if (!sourceParams.tiles || !sourceParams.tiles.length) return
+        if (sourceParams.scheme === 'tms') {
+            const numOfY = this.tilingScheme.getNumberOfYTilesAtLevel(z)
+            y = numOfY - y - 1
+        }
         let tileUrl = sourceParams.tiles[0].replace('{x}', x).replace('{y}', y).replace('{z}', z)
         tileUrl = /^((http)|(https)|(data:)|\/)/.test(tileUrl) ? tileUrl : this.path + tileUrl
 

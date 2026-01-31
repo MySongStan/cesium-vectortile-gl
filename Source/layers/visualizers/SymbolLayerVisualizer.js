@@ -94,7 +94,16 @@ export class SymbolLayerVisualizer extends ILayerVisualizer {
             //读取图层样式属性
             const iconImage = style.layout.getDataValue('icon-image', tile.z, sourceFeature)
             const textField = style.layout.getDataValue('text-field', tile.z, sourceFeature)
-            let text = textField && style.layout.resolveTokens(properties, textField)
+            let text = textField
+            if (typeof text === 'string') {
+                text = style.layout.resolveTokens(properties, textField)
+            }
+            else if (text && text.sections) {
+                for (const section of text.sections) {
+                    section.text = style.layout.resolveTokens(properties, section.text)
+                }
+                text = text.toString()
+            }
             if (iconImage) {
                 warnOnce('symbol图层：不支持图标')
                 continue

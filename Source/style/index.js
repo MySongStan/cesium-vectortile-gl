@@ -1,2 +1,2 @@
-export { StyleLayerProperties } from "./StyleLayerProperties";
-export { StyleLayer } from "./StyleLayer";
+export { StyleLayerProperties } from './StyleLayerProperties'
+export { StyleLayer } from './StyleLayer'

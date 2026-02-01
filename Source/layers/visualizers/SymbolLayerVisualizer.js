@@ -77,7 +77,9 @@ export class SymbolLayerVisualizer extends ILayerVisualizer {
       textSize,
       textColor,
       outlineWidth,
-      outlineColor
+      outlineColor,
+      textOffset,
+      textOrigin
     ) {
       if (
         !Cesium.Rectangle.contains(
@@ -96,7 +98,13 @@ export class SymbolLayerVisualizer extends ILayerVisualizer {
         outlineWidth: outlineWidth * textSize,
         outlineColor,
         //禁用深度测试
-        disableDepthTestDistance: Infinity
+        disableDepthTestDistance: Infinity,
+        pixelOffset: new Cesium.Cartesian2(
+          textOffset[0] * textSize,
+          textOffset[1] * textSize
+        ),
+        horizontalOrigin: textOrigin.horizontal,
+        verticalOrigin: textOrigin.vertical
       })
       label.batchId = labels.length
       labels.push(label)
@@ -175,6 +183,17 @@ export class SymbolLayerVisualizer extends ILayerVisualizer {
         tile.z,
         sourceFeature
       )
+      const textAnchor = style.layout.getDataValue(
+        'text-anchor',
+        tile.z,
+        sourceFeature
+      )
+      const textOrigin = getOrigin(textAnchor)
+      const textOffset = style.layout.getDataValue(
+        'text-offset',
+        tile.z,
+        sourceFeature
+      )
       const textColor = style.convertColor(
         style.paint.getDataValue('text-color', tile.z, sourceFeature)
       )
@@ -197,7 +216,9 @@ export class SymbolLayerVisualizer extends ILayerVisualizer {
           textSize,
           textColor,
           outlineWidth,
-          outlineColor
+          outlineColor,
+          textOffset,
+          textOrigin
         )
       } else if (geometryType == 'MultiPoint') {
         coordinates.forEach(coord => {
@@ -208,7 +229,9 @@ export class SymbolLayerVisualizer extends ILayerVisualizer {
             textSize,
             textColor,
             outlineWidth,
-            outlineColor
+            outlineColor,
+            textOffset,
+            textOrigin
           )
         })
       } else {
@@ -315,5 +338,49 @@ export class SymbolLayerVisualizer extends ILayerVisualizer {
 
   isDestroyed() {
     return false
+  }
+}
+
+function getOrigin(textAnchor) {
+  let horizontal = Cesium.HorizontalOrigin.CENTER
+  let vertical = Cesium.VerticalOrigin.CENTER
+
+  switch (textAnchor) {
+    case 'left':
+      horizontal = Cesium.HorizontalOrigin.LEFT
+      break
+    case 'right':
+      horizontal = Cesium.HorizontalOrigin.RIGHT
+      break
+    case 'top':
+      vertical = Cesium.VerticalOrigin.TOP
+      break
+    case 'bottom':
+      vertical = Cesium.VerticalOrigin.BOTTOM
+      break
+    case 'top-left':
+      vertical = Cesium.VerticalOrigin.TOP
+      horizontal = Cesium.HorizontalOrigin.LEFT
+      break
+    case 'top-right':
+      vertical = Cesium.VerticalOrigin.TOP
+      horizontal = Cesium.HorizontalOrigin.RIGHT
+      break
+    case 'bottom-left':
+      vertical = Cesium.VerticalOrigin.BOTTOM
+      horizontal = Cesium.HorizontalOrigin.LEFT
+      break
+    case 'bottom-right':
+      vertical = Cesium.VerticalOrigin.BOTTOM
+      horizontal = Cesium.HorizontalOrigin.RIGHT
+      break
+    case 'center':
+    default:
+      break
+  }
+
+  return {
+    horizontal,
+    vertical
   }
 }

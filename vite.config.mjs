@@ -1,10 +1,12 @@
 import { defineConfig } from 'vite'
-import * as path from 'path'
+import path from 'path'
+import { fileURLToPath } from 'url'
 import license from 'vite-plugin-license'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'Source')

@@ -15,7 +15,13 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "prepare": "husky",
     "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "lint-staged": {
+    "*.js": ["eslint --fix", "prettier --write"],
+    "*.{json,jsonc,geojson,md,html,css,less,yml,yaml}": ["prettier --write"],
+    "*.{mjs,cjs}": ["prettier --write"]
   },
   "repository": {
     "type": "git",
@@ -31,6 +37,8 @@
     "cesium": "^1.136.0",
     "eslint": "^9.15.0",
     "eslint-config-prettier": "^9.1.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.4.3",
     "prettier": "^3.4.2",
     "vite": "^7.3.0",
     "vite-plugin-license": "^0.0.2"

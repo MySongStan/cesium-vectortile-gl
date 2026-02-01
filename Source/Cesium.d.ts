@@ -1,3 +1,4 @@
+// @ts-nocheck
 export * from 'cesium'
 
 //这里补充一些Cesium官方d.ts没有包含的被标为私有的API说明，辅助代码提示。

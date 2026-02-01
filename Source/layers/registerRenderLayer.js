@@ -1,5 +1,5 @@
-import { ILayerVisualizer } from "./visualizers/ILayerVisualizer"
-import { IRenderLayer } from "./IRenderLayer"
+import { ILayerVisualizer } from './visualizers/ILayerVisualizer'
+import { IRenderLayer } from './IRenderLayer'
 
 /**
  * @type {Record<string,typeof IRenderLayer>}
@@ -17,8 +17,8 @@ const LayerVisualizers = {}
  * @param {typeof ILayerVisualizer} [layerVisualizerCls] 图层渲染器类，必须继承 ILayerVisualizer
  */
 function registerRenderLayer(type, renderLayerCls, layerVisualizerCls) {
-    RenderLayers[type] = renderLayerCls
-    LayerVisualizers[type] = layerVisualizerCls
+  RenderLayers[type] = renderLayerCls
+  LayerVisualizers[type] = layerVisualizerCls
 }
 
 export { RenderLayers, LayerVisualizers, registerRenderLayer }

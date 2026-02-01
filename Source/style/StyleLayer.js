@@ -1,43 +1,43 @@
-import { featureFilter, Color } from "@maplibre/maplibre-gl-style-spec";
-import { StyleLayerProperties } from "./StyleLayerProperties";
+import { featureFilter, Color } from '@maplibre/maplibre-gl-style-spec'
+import { StyleLayerProperties } from './StyleLayerProperties'
 
 export class StyleLayer {
-    /**
-     * @param {import('@maplibre/maplibre-gl-style-spec').LayerSpecification} layer 
-     */
-    constructor(layer) {
-        this.data = layer
-        this.type = layer.type
-        this.id = layer.id
-        this.minzoom = layer.minzoom || 0
-        this.maxzoom = layer.maxzoom || 24
-        this.source = layer.source
-        /**@type {string} */
-        this.sourceLayer = layer['source-layer']
-        /**@type {import("@maplibre/maplibre-gl-style-spec").FeatureFilter|null} */
-        this.filter = null
-        this.paint = new StyleLayerProperties('paint_' + layer.type, layer.paint)
-        this.layout = new StyleLayerProperties('layout_' + layer.type, layer.layout)
-        if (layer.filter) {
-            this.filter = featureFilter(layer.filter)
-        }
+  /**
+   * @param {import('@maplibre/maplibre-gl-style-spec').LayerSpecification} layer
+   */
+  constructor(layer) {
+    this.data = layer
+    this.type = layer.type
+    this.id = layer.id
+    this.minzoom = layer.minzoom || 0
+    this.maxzoom = layer.maxzoom || 24
+    this.source = layer.source
+    /**@type {string} */
+    this.sourceLayer = layer['source-layer']
+    /**@type {import("@maplibre/maplibre-gl-style-spec").FeatureFilter|null} */
+    this.filter = null
+    this.paint = new StyleLayerProperties('paint_' + layer.type, layer.paint)
+    this.layout = new StyleLayerProperties('layout_' + layer.type, layer.layout)
+    if (layer.filter) {
+      this.filter = featureFilter(layer.filter)
     }
+  }
 
-    /**
-     * 转换图层样式颜色，内部进行预乘Alpha的逆处理，@maplibre/maplibre-gl-style-spec内部会自动对颜色进行premultiplyAlpha操作，直接使用会出现明显的色差
-     * @param {Color} styleColor 
-     * @param {Cesium.Color} [result] 
-     * @returns 
-     */
-    convertColor(styleColor, result) {
-        const alphaScalar = styleColor.a > 0 ? 1. / styleColor.a : 1
-        if (!result) {
-            result = new Cesium.Color()
-        }
-        result.red = styleColor.r * alphaScalar
-        result.green = styleColor.g * alphaScalar
-        result.blue = styleColor.b * alphaScalar
-        result.alpha = styleColor.a
-        return result
+  /**
+   * 转换图层样式颜色，内部进行预乘Alpha的逆处理，@maplibre/maplibre-gl-style-spec内部会自动对颜色进行premultiplyAlpha操作，直接使用会出现明显的色差
+   * @param {Color} styleColor
+   * @param {Cesium.Color} [result]
+   * @returns
+   */
+  convertColor(styleColor, result) {
+    const alphaScalar = styleColor.a > 0 ? 1 / styleColor.a : 1
+    if (!result) {
+      result = new Cesium.Color()
     }
+    result.red = styleColor.r * alphaScalar
+    result.green = styleColor.g * alphaScalar
+    result.blue = styleColor.b * alphaScalar
+    result.alpha = styleColor.a
+    return result
+  }
 }

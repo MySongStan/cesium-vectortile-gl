@@ -34,6 +34,7 @@
 从 **0.3.0 版本**起，本项目已将许可证由 **MIT 许可证** 更改为 **Apache License 2.0**。
 
 此次变更旨在：
+
 - 为贡献者和用户提供明确的**专利授权与保护**，
 - 对**商业使用和再分发**提供更清晰的法律条款，
 - 与相关地理空间项目（如 CesiumJS）的许可策略保持一致。
@@ -73,20 +74,20 @@ npm install @mesh3d/cesium-vectortile-gl
 ## 使用
 
 ```js
-import { VectorTileset } from "@mesh3d/cesium-vectortile-gl";
+import { VectorTileset } from '@mesh3d/cesium-vectortile-gl'
 
 const tileset = new VectorTileset({
-  style: "/assets/demotiles/style.json",
-});
+  style: '/assets/demotiles/style.json'
+})
 
-viewer.scene.primitives.add(tileset);
+viewer.scene.primitives.add(tileset)
 ```
 
 **注意**：请确保通过`window.Cesium`能够访问到可用的 Cesium 包，例如：
 
 ```js
-import * as Cesium from "cesium";
-window.Cesium = Cesium;
+import * as Cesium from 'cesium'
+window.Cesium = Cesium
 ```
 
 或者在 html 中通过`script`标签引入 Cesium.js，例如
@@ -110,12 +111,12 @@ window.Cesium = Cesium;
 编写扩展类后，通过如下方式注册：
 
 ```js
-import { registerRenderLayer } from "@mesh3d/cesium-vectortile-gl";
+import { registerRenderLayer } from '@mesh3d/cesium-vectortile-gl'
 //简单扩展
-registerRenderLayer("layerType", XXXRenderLayer);
+registerRenderLayer('layerType', XXXRenderLayer)
 
 //高级扩展
-registerRenderLayer("fill", FillRenderLayer, FillLayerVisualizer);
+registerRenderLayer('fill', FillRenderLayer, FillLayerVisualizer)
 ```
 
 - `第一个参数`为图层类型名称，如 circle，**必选**
@@ -134,9 +135,9 @@ registerRenderLayer("fill", FillRenderLayer, FillLayerVisualizer);
 编写扩展类后，通过如下方式注册：
 
 ```js
-import { registerSource } from "@mesh3d/cesium-vectortile-gl";
+import { registerSource } from '@mesh3d/cesium-vectortile-gl'
 
-registerSource("sourceType", XXXSource);
+registerSource('sourceType', XXXSource)
 ```
 
 - `第一个参数`为数据源类型名称，如 raster，**必选**

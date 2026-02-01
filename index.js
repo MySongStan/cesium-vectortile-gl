@@ -1,6 +1,6 @@
-export * from "./Source/sources";
-export * from "./Source/style";
-export * from "./Source/layers";
-export { VectorTileLOD } from "./Source/VectorTileLOD";
-export { VectorTileRenderList } from "./Source/VectorTileRenderList";
-export { VectorTileset } from "./Source/VectorTileset";
+export * from './Source/sources'
+export * from './Source/style'
+export * from './Source/layers'
+export { VectorTileLOD } from './Source/VectorTileLOD'
+export { VectorTileRenderList } from './Source/VectorTileRenderList'
+export { VectorTileset } from './Source/VectorTileset'

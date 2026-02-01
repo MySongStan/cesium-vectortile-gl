@@ -135,6 +135,18 @@ export class SymbolLayerVisualizer extends ILayerVisualizer {
       if (!text) {
         continue
       }
+
+      const textTransform = style.layout.getDataValue(
+        'text-transform',
+        tile.z,
+        sourceFeature
+      )
+      if (textTransform === 'uppercase') {
+        text = String(text).toUpperCase()
+      } else if (textTransform === 'lowercase') {
+        text = String(text).toLowerCase()
+      }
+
       const maxWidth =
         style.layout.getDataValue('text-max-width', tile.z, sourceFeature) * 3
       const textRotationAlignment = style.layout.getDataValue(

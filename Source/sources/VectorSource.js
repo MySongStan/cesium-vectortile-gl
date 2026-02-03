@@ -57,6 +57,38 @@ export class VectorSource extends ISource {
       this.errorEvent.raiseEvent(err)
     }
   }
+
+  /**
+   * 仅拉取瓦片 ArrayBuffer，不解析；供 Web Worker 路径使用。
+   * @param {number} x
+   * @param {number} y
+   * @param {number} z
+   * @param {import('../../VectorTileset').VectorTileset} [tileset]
+   * @returns {Promise<{buffer:ArrayBuffer,encoding:string}|undefined>}
+   */
+  async requestTileBuffer(x, y, z, tileset) {
+    const sourceParams = this.styleSource
+    if (!sourceParams.tiles || !sourceParams.tiles.length) return
+    if (sourceParams.scheme === 'tms') {
+      const numOfY = this.tilingScheme.getNumberOfYTilesAtLevel(z)
+      y = numOfY - y - 1
+    }
+    let tileUrl = sourceParams.tiles[0]
+      .replace('{x}', x)
+      .replace('{y}', y)
+      .replace('{z}', z)
+    tileUrl = /^((http)|(https)|(data:)|\/)/.test(tileUrl)
+      ? tileUrl
+      : this.path + tileUrl
+
+    try {
+      const buffer = await fetch(tileUrl).then(res => res.arrayBuffer())
+      const encoding = sourceParams.encoding === 'mlt' ? 'mlt' : 'mvt'
+      return { buffer, encoding }
+    } catch (err) {
+      this.errorEvent.raiseEvent(err)
+    }
+  }
 }
 
 registerSource('vector', VectorSource)

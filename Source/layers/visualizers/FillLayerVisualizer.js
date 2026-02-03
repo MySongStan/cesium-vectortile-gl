@@ -104,6 +104,82 @@ export class FillLayerVisualizer extends ILayerVisualizer {
   }
 
   /**
+   * 从 Web Worker 结果构建图层几何体（positions/normals/indices 已由 Worker 算好）
+   * @param {object} workerLayerData - { layerId, source, sourceLayer, styleLayer, batches, firstBatchId, lastBatchId }
+   * @param {IRenderLayer} layer
+   * @param {Cesium.FrameState} frameState
+   * @param {VectorTileset} tileset
+   */
+  addLayerFromWorkerResult(workerLayerData, layer, frameState, tileset) {
+    const { batches, firstBatchId, lastBatchId } = workerLayerData
+    const geometryInstances = this.geometryInstances
+    const cartesian = new Cesium.Cartesian3()
+
+    for (const batch of batches) {
+      const { positions, normals, st, indices, colorBytes, id, properties } =
+        batch
+      const vertCount = positions.length / 3
+      const geometry = new Cesium.Geometry({
+        attributes: {
+          position: {
+            componentDatatype: Cesium.ComponentDatatype.DOUBLE,
+            componentsPerAttribute: 3,
+            normalize: false,
+            values: positions
+          },
+          normal: {
+            componentDatatype: Cesium.ComponentDatatype.FLOAT,
+            componentsPerAttribute: 3,
+            normalize: false,
+            values: normals
+          },
+          st: {
+            componentDatatype: Cesium.ComponentDatatype.FLOAT,
+            componentsPerAttribute: 2,
+            normalize: false,
+            values: st
+          }
+        },
+        primitiveType: Cesium.PrimitiveType.TRIANGLES,
+        indices,
+        boundingSphere: Cesium.BoundingSphere.fromVertices(positions)
+      })
+      const cartographic = Cesium.Cartographic.fromCartesian(
+        geometry.boundingSphere.center
+      )
+      cartographic.height = 0
+      const center = Cesium.Cartographic.toCartesian(
+        cartographic,
+        null,
+        cartesian
+      )
+      const instance = new Cesium.GeometryInstance({
+        geometry,
+        attributes: {
+          color: new Cesium.GeometryInstanceAttribute({
+            componentDatatype: Cesium.ComponentDatatype.UNSIGNED_BYTE,
+            componentsPerAttribute: 4,
+            normalize: true,
+            value: Array.from(colorBytes)
+          })
+        },
+        id: new Cesium.Entity({
+          position: center,
+          id,
+          properties
+        })
+      })
+      geometryInstances.push(instance)
+    }
+
+    layer.firstBatchId = firstBatchId
+    layer.lastBatchId = lastBatchId
+    layer.offsets = []
+    layer.counts = []
+    this.layers.push(layer)
+  }
+
+  /**
    * 创建一个多边形的几何体实例
    * @param {FillFeature} feature
    * @param {number} granularity

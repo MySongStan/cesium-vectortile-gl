@@ -242,6 +242,67 @@ export class SymbolLayerVisualizer extends ILayerVisualizer {
     this.layers.push(layer)
   }
 
+  /**
+   * 从 Web Worker 结果构建符号图层（placements 已由 Worker 算好）
+   * @param {object} workerLayerData - { layerId, source, sourceLayer, styleLayer, placements }
+   * @param {SymbolRenderLayer} layer
+   * @param {Cesium.FrameState} frameState
+   * @param {VectorTileset} tileset
+   */
+  addLayerFromWorkerResult(workerLayerData, layer, frameState, tileset) {
+    const { placements } = workerLayerData
+    const { labels } = this
+    const rectangle = this.tile.rectangle
+
+    for (const p of placements || []) {
+      if (
+        !Cesium.Rectangle.contains(
+          rectangle,
+          Cesium.Cartographic.fromDegrees(p.coord[0], p.coord[1])
+        )
+      ) {
+        continue
+      }
+      const textColor = Cesium.Color.fromBytes(
+        p.textColorBytes[0],
+        p.textColorBytes[1],
+        p.textColorBytes[2],
+        p.textColorBytes[3]
+      )
+      const outlineColor = Cesium.Color.fromBytes(
+        p.outlineColorBytes[0],
+        p.outlineColorBytes[1],
+        p.outlineColorBytes[2],
+        p.outlineColorBytes[3]
+      )
+      const textOrigin = getOrigin(p.textAnchor)
+      const label = new Cesium.Label({
+        position: Cesium.Cartesian3.fromDegrees(p.coord[0], p.coord[1]),
+        text: p.text,
+        font: p.textSize + 'px ' + p.font,
+        fillColor: textColor,
+        style:
+          p.outlineWidth > 0
+            ? Cesium.LabelStyle.FILL_AND_OUTLINE
+            : Cesium.LabelStyle.FILL,
+        outlineWidth: p.outlineWidth * p.textSize,
+        outlineColor,
+        disableDepthTestDistance: Infinity,
+        pixelOffset: new Cesium.Cartesian2(
+          (p.textOffset[0] || 0) * p.textSize,
+          (p.textOffset[1] || 0) * p.textSize
+        ),
+        horizontalOrigin: textOrigin.horizontal,
+        verticalOrigin: textOrigin.vertical
+      })
+      label.batchId = labels.length
+      labels.push(label)
+      layer.labels.push(label)
+    }
+
+    this.layers.push(layer)
+  }
+
   createPrimitive() {
     //所有图层的文字共用一个LabelCollection
     //注意：这样文字就没有了“图层”的特征了，渲染顺序可能和样式配置的不一致

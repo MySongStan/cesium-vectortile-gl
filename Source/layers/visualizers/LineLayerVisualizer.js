@@ -215,6 +215,68 @@ export class LineLayerVisualizer extends ILayerVisualizer {
   }
 
   /**
+   * 从 Web Worker 结果构建图层几何体（positions 已由 Worker 算好）
+   * @param {object} workerLayerData - { layerId, source, sourceLayer, styleLayer, batches, firstBatchId, lastBatchId }
+   * @param {LineRenderLayer} layer
+   * @param {Cesium.FrameState} frameState
+   * @param {VectorTileset} tileset
+   */
+  addLayerFromWorkerResult(workerLayerData, layer, frameState, tileset) {
+    const { batches, firstBatchId, lastBatchId } = workerLayerData
+    const geometryInstances = this.geometryInstances
+
+    for (const batch of batches) {
+      const { positions, colorBytes, lineWidth, id, properties } = batch
+      const posArray = []
+      for (let i = 0; i < positions.length; i += 3) {
+        posArray.push(
+          new Cesium.Cartesian3(
+            positions[i],
+            positions[i + 1],
+            positions[i + 2]
+          )
+        )
+      }
+      const boundingSphere = Cesium.BoundingSphere.fromPoints(posArray)
+      const cartographic = Cesium.Cartographic.fromCartesian(
+        boundingSphere.center
+      )
+      cartographic.height = 0
+      const center = Cesium.Cartographic.toCartesian(
+        cartographic,
+        null,
+        new Cesium.Cartesian3()
+      )
+      const instance = new Cesium.GeometryInstance({
+        geometry: new Cesium.PolylineGeometry({
+          positions: posArray,
+          width: lineWidth
+        }),
+        attributes: {
+          color: new Cesium.GeometryInstanceAttribute({
+            componentDatatype: Cesium.ComponentDatatype.UNSIGNED_BYTE,
+            componentsPerAttribute: 4,
+            normalize: true,
+            value: Array.from(colorBytes)
+          })
+        },
+        id: new Cesium.Entity({
+          position: center,
+          id,
+          properties
+        })
+      })
+      geometryInstances.push(instance)
+    }
+
+    layer.firstBatchId = firstBatchId
+    layer.lastBatchId = lastBatchId
+    layer.offsets = []
+    layer.counts = []
+    this.layers.push(layer)
+  }
+
+  /**
    * @param {LineFeature} feature
    */
   addFeature(feature) {

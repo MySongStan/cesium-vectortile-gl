@@ -32,7 +32,10 @@ export default [
         fetch: 'readonly',
         console: 'readonly',
         requestAnimationFrame: 'readonly',
-        devicePixelRatio: 'readonly'
+        devicePixelRatio: 'readonly',
+        URL: 'readonly',
+        performance: 'readonly',
+        setTimeout: 'readonly'
       }
     },
     rules: {
@@ -42,6 +45,14 @@ export default [
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }
       ],
       'no-empty': ['warn', { allowEmptyCatch: true }]
+    }
+  },
+  {
+    files: ['Source/workers/**/*.js'],
+    languageOptions: {
+      globals: {
+        self: 'readonly'
+      }
     }
   }
 ]

@@ -243,19 +243,41 @@ export class VectorTileLOD {
       }
     }
 
-    for (const sourceId in sourcesToLoad) {
-      const source = sourcesToLoad[sourceId]
-      try {
-        const tileData = await source.requestTile(
-          this.x,
-          this.y,
-          this.z,
-          tileset
-        )
-        if (tileData) {
-          this.sources[sourceId] = tileData
-        }
-      } catch (err) {}
+    const useWorker =
+      tileset._taskProcessor &&
+      Object.values(sourcesToLoad).every(s => s.type === 'vector')
+
+    if (useWorker) {
+      for (const sourceId in sourcesToLoad) {
+        const source = sourcesToLoad[sourceId]
+        try {
+          const data = await source.requestTileBuffer(
+            this.x,
+            this.y,
+            this.z,
+            tileset
+          )
+          if (data && data.buffer) {
+            this.sources[sourceId] = data
+          }
+        } catch (err) {}
+      }
+      this._workerBuffers = true
+    } else {
+      for (const sourceId in sourcesToLoad) {
+        const source = sourcesToLoad[sourceId]
+        try {
+          const tileData = await source.requestTile(
+            this.x,
+            this.y,
+            this.z,
+            tileset
+          )
+          if (tileData) {
+            this.sources[sourceId] = tileData
+          }
+        } catch (err) {}
+      }
     }
 
     tileset.numLoading--
@@ -335,6 +357,89 @@ export class VectorTileLOD {
         }
         visualizer.addLayer(features, renderLayer, frameState, tileset)
       }
+    }
+
+    this.state = 'ready'
+  }
+
+  /**
+   * 从 Web Worker 结果创建渲染图层与 Visualizer（仅几何数据来自 Worker）
+   * @param {object} result - Worker 返回的 { fill, line, symbol }
+   * @param {Cesium.FrameState} frameState
+   * @param {VectorTileset} tileset
+   */
+  createRenderLayersFromWorkerResult(result, frameState, tileset) {
+    if (result.error) {
+      this.state = 'error'
+      return
+    }
+    const styleLayers = tileset._styleLayers
+    const renderLayers = this.layers
+    const visualizers = this.visualizers
+    /**@type {Record<string,ILayerVisualizer>} */
+    const visualizerMap = {}
+
+    for (const item of result.fill || []) {
+      const styleLayer = styleLayers.find(l => l.id === item.layerId)
+      if (!styleLayer) continue
+      const RenderLayer = RenderLayers.fill
+      const LayerVisualizer = LayerVisualizers.fill
+      const renderLayer = new RenderLayer([], styleLayer, this)
+      renderLayers.push(renderLayer)
+      let visualizer = visualizerMap.fill
+      if (!visualizer) {
+        visualizer = new LayerVisualizer(this)
+        visualizerMap.fill = visualizer
+        visualizers.push(visualizer)
+      }
+      visualizer.addLayerFromWorkerResult(
+        item,
+        renderLayer,
+        frameState,
+        tileset
+      )
+    }
+
+    for (const item of result.line || []) {
+      const styleLayer = styleLayers.find(l => l.id === item.layerId)
+      if (!styleLayer) continue
+      const RenderLayer = RenderLayers.line
+      const LayerVisualizer = LayerVisualizers.line
+      const renderLayer = new RenderLayer([], styleLayer, this)
+      renderLayers.push(renderLayer)
+      let visualizer = visualizerMap.line
+      if (!visualizer) {
+        visualizer = new LayerVisualizer(this)
+        visualizerMap.line = visualizer
+        visualizers.push(visualizer)
+      }
+      visualizer.addLayerFromWorkerResult(
+        item,
+        renderLayer,
+        frameState,
+        tileset
+      )
+    }
+
+    for (const item of result.symbol || []) {
+      const styleLayer = styleLayers.find(l => l.id === item.layerId)
+      if (!styleLayer) continue
+      const RenderLayer = RenderLayers.symbol
+      const LayerVisualizer = LayerVisualizers.symbol
+      const renderLayer = new RenderLayer([], styleLayer, this)
+      renderLayers.push(renderLayer)
+      let visualizer = visualizerMap.symbol
+      if (!visualizer) {
+        visualizer = new LayerVisualizer(this)
+        visualizerMap.symbol = visualizer
+        visualizers.push(visualizer)
+      }
+      visualizer.addLayerFromWorkerResult(
+        item,
+        renderLayer,
+        frameState,
+        tileset
+      )
     }
 
     this.state = 'ready'
@@ -446,14 +551,63 @@ export class VectorTileLOD {
       this.getSources(tileset)
     }
 
-    //创建渲染图层实例
+    //创建渲染图层实例（主线程或 Worker 路径）
     if (
       this.state === 'loaded' &&
       tileset.numInitializing < tileset.maxInitializing
     ) {
-      this.state = 'initializing'
-      tileset.numInitializing++
-      this.createRenderLayers(frameState, tileset)
+      if (this._workerBuffers && tileset._taskProcessor) {
+        const parameters = {
+          sources: {},
+          x: this.x,
+          y: this.y,
+          z: this.z,
+          extent: EXTENT,
+          styleLayers: tileset._styleLayers.map(sl => ({
+            id: sl.id,
+            type: sl.type,
+            source: sl.source,
+            sourceLayer: sl.sourceLayer ?? sl.data['source-layer'],
+            filter: sl.data.filter,
+            paint: sl.data.paint,
+            layout: sl.data.layout
+          }))
+        }
+        const transferableObjects = []
+        for (const sourceId in this.sources) {
+          const data = this.sources[sourceId]
+          if (data && data.buffer) {
+            parameters.sources[sourceId] = {
+              buffer: data.buffer,
+              encoding: data.encoding || 'mvt'
+            }
+            transferableObjects.push(data.buffer)
+          }
+        }
+        const promise = tileset._taskProcessor.scheduleTask(
+          parameters,
+          transferableObjects
+        )
+        if (Cesium.defined(promise)) {
+          this.state = 'initializing'
+          tileset.numInitializing++
+          promise
+            .then(result => {
+              this.createRenderLayersFromWorkerResult(
+                result,
+                frameState,
+                tileset
+              )
+            })
+            .catch(() => {
+              this.state = 'error'
+            })
+        }
+      } else {
+        this.state = 'initializing'
+        tileset.numInitializing++
+        this.createRenderLayers(frameState, tileset)
+      }
     }
 
     if (this.state === 'ready') {

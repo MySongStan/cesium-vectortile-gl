@@ -83,6 +83,34 @@ const tileset = new VectorTileset({
 viewer.scene.primitives.add(tileset)
 ```
 
+### 可选：Web Worker 多线程瓦片处理
+
+将瓦片解析、坐标转换、几何构建放到子线程，减轻主线程卡顿。不传 `workerUrl` 时仍走主线程。
+
+```js
+import {
+  VectorTileset,
+  DEFAULT_WORKER_FILENAME
+} from '@mesh3d/cesium-vectortile-gl'
+
+// 与 cvt-gl.js 同目录的 Worker 脚本 URL
+const workerUrl = new URL(
+  `./node_modules/@mesh3d/cesium-vectortile-gl/dist/${DEFAULT_WORKER_FILENAME}`,
+  import.meta.url
+).href
+
+const tileset = new VectorTileset({
+  style: '/assets/demotiles/style.json',
+  workerUrl,
+  maximumActiveTasks: 4
+})
+```
+
+- 仅对 **vector** 源生效；若瓦片含 GeoJSON 源则自动回退到主线程。
+- `maximumActiveTasks` 与 `maxLoading`/`maxInitializing` 配合，控制并发数。
+- 本地示例：运行 `npm run dev` 后打开 [worker.html](worker.html) 可查看启用 Web Worker 的示例。
+- **性能对比**：在浏览器中打开 [benchmark.html](benchmark.html)，点击「运行性能对比」可测量主线程 vs Worker 的帧时间、长帧数等（无需 Vitest，需真实浏览器与 WebGL）。
+
 **注意**：请确保通过`window.Cesium`能够访问到可用的 Cesium 包，例如：
 
 ```js
@@ -96,11 +124,17 @@ window.Cesium = Cesium
 <script src="libs/cesium/Build/CesiumUnminified/Cesium.js"></script>
 ```
 
+## 性能测试（Worker vs 主线程）
+
+1. 运行 `npm run dev`，在浏览器打开 [benchmark.html](benchmark.html)。
+2. 点击「运行性能对比（约 30 秒）」：先采集约 12 秒主线程模式帧时间，再采集约 12 秒 Worker 模式帧时间。
+3. 页面与控制台会输出：帧数、平均/最大帧时间、P95/P99、长帧(≥50ms) 数量及两者对比。
+
 ## 扩展
 
 可以通过实现统一的接口，对图层类型和数据源类型两大模块的进行自定义扩展，以支持更多 Maplibre 规范的数据源类型和图层样式。
 
-#### 扩展图层类型
+### 扩展图层类型
 
 扩展支持新的图层类型，有两种方式：
 
@@ -123,7 +157,7 @@ registerRenderLayer('fill', FillRenderLayer, FillLayerVisualizer)
 - `第二个参数`为图层渲染类，**必选**
 - `第三个参数`为图层渲染器类，**可选**，仅注册高级扩展时需要传递
 
-#### 扩展数据源类型
+### 扩展数据源类型
 
 数据类型的扩展采用面向接口，只需要按`ISource`的约定编写必须实现的方法（init、requestTile）即可。
 

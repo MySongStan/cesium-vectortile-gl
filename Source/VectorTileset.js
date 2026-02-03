@@ -12,6 +12,8 @@ export class VectorTileset {
    * @param {object} options
    * @param {string|import('@maplibre/maplibre-gl-style-spec').StyleSpecification} options.style
    * @param {boolean} [options.showTileColor=false]
+   * @param {string} [options.workerUrl] - Web Worker 脚本 URL，用于瓦片解析/几何计算；不传则走主线程
+   * @param {number} [options.maximumActiveTasks=4] - 同时进行的 Worker 任务数，与 maxLoading 配合
    */
   constructor(options) {
     this.maximumLevel = 24
@@ -37,6 +39,10 @@ export class VectorTileset {
     this.maxLoading = 6
     this.numInitializing = 0
     this.maxInitializing = 6
+    /**@type {Cesium.TaskProcessor|null} */
+    this._taskProcessor = null
+    this._workerUrl = options.workerUrl || null
+    this._maximumActiveTasks = options.maximumActiveTasks ?? 4
     /**@type {Cesium.Texture} */
     this.tileIdTexture = null
     this.zoom = 0
@@ -111,6 +117,14 @@ export class VectorTileset {
 
     //初始化渲染队列
     this._renderList.init()
+
+    // Web Worker：有 workerUrl 时创建 TaskProcessor，供瓦片解析/几何计算使用
+    if (this._workerUrl && typeof Cesium.TaskProcessor !== 'undefined') {
+      this._taskProcessor = new Cesium.TaskProcessor(
+        this._workerUrl,
+        Math.min(this._maximumActiveTasks, this.maxInitializing)
+      )
+    }
 
     this._styleJson = style
     this.ready = true
@@ -277,6 +291,11 @@ export class VectorTileset {
     if (this._renderList) {
       this._renderList.destroy()
       this._renderList = null
+    }
+
+    if (this._taskProcessor && !this._taskProcessor.isDestroyed()) {
+      this._taskProcessor.destroy()
+      this._taskProcessor = null
     }
 
     if (this._tilesToUpdate) {

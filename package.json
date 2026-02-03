@@ -9,7 +9,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "vite build",
+    "build": "vite build && vite build --config vite.worker.config.mjs",
     "dev": "vite dev",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

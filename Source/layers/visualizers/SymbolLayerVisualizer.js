@@ -17,6 +17,9 @@ let scratchDirectionToEye = null
 /**@type {Cesium.Cartesian3} */
 let scratchSurfaceNormal = null
 
+/** 淡入淡出每帧向目标透明度的插值系数，约 0.10 时 ~10帧完成过渡，越小越慢 */
+const FADE_SPEED = 0.1
+
 export class SymbolLayerVisualizer extends ILayerVisualizer {
   constructor(layers, tile) {
     if (scratchDirectionToEye === null) {
@@ -106,6 +109,9 @@ export class SymbolLayerVisualizer extends ILayerVisualizer {
         horizontalOrigin: textOrigin.horizontal,
         verticalOrigin: textOrigin.vertical
       })
+      label._baseFillColor = label.fillColor.clone()
+      label._baseOutlineColor = label.outlineColor.clone()
+      label.vtAlpha = 0
       label.batchId = labels.length
       labels.push(label)
       layer.labels.push(label)
@@ -295,6 +301,9 @@ export class SymbolLayerVisualizer extends ILayerVisualizer {
         horizontalOrigin: textOrigin.horizontal,
         verticalOrigin: textOrigin.vertical
       })
+      label._baseFillColor = label.fillColor.clone()
+      label._baseOutlineColor = label.outlineColor.clone()
+      label.vtAlpha = 0
       label.batchId = labels.length
       labels.push(label)
       layer.labels.push(label)
@@ -369,9 +378,31 @@ export class SymbolLayerVisualizer extends ILayerVisualizer {
         ) {
           layer.labels[i].show = false
         } else {
-          //vtPlaceable 为碰撞检测结果，true 表示可以摆放到屏幕
-          //碰撞检测在 symbol/SymbolPlacements.js 里完成
-          layer.labels[i].show = !!layer.labels[i].vtPlaceable
+          // 淡入淡出：根据 vtPlaceable 插值 vtAlpha，用 style 透明度控制，alpha 为 0 时才彻底隐藏
+          const label = layer.labels[i]
+          if (!label._baseFillColor) {
+            label._baseFillColor = label.fillColor.clone()
+            label._baseOutlineColor = label.outlineColor.clone()
+            if (label.vtAlpha == null) label.vtAlpha = label.vtPlaceable ? 1 : 0
+          }
+          const targetAlpha = label.vtPlaceable ? 1 : 0
+          label.vtAlpha = Cesium.Math.lerp(
+            label.vtAlpha ?? 0,
+            targetAlpha,
+            FADE_SPEED
+          )
+          if (label.vtAlpha < 0.001) {
+            label.vtAlpha = 0
+            label.show = false
+          } else {
+            label.show = true
+            label.fillColor = label._baseFillColor.withAlpha(
+              label._baseFillColor.alpha * label.vtAlpha
+            )
+            label.outlineColor = label._baseOutlineColor.withAlpha(
+              label._baseOutlineColor.alpha * label.vtAlpha
+            )
+          }
         }
       }
     }

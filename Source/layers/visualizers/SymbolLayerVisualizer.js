@@ -88,7 +88,8 @@ export class SymbolLayerVisualizer extends ILayerVisualizer {
         !Cesium.Rectangle.contains(
           rectangle,
           Cesium.Cartographic.fromDegrees(coord[0], coord[1])
-        )
+        ) ||
+        !text
       ) {
         return
       }
@@ -352,6 +353,37 @@ export class SymbolLayerVisualizer extends ILayerVisualizer {
       frameState.commandList = this.commandList
       this.primitive.update(frameState)
       frameState.commandList = preCommandList
+
+      //解决Cesium特殊字符支持问题：生成的字形图纹理宽高为0的情况下，dimensions的height或者width为NaN，
+      //导致drawCommand的boundingVolume.radius为NaN，
+      //进而引发 View.createPotentiallyVisibleSet drawCommand按视锥分组失败的致命问题
+      for (const label of this.labels) {
+        const glyphs = label._glyphs
+        if (glyphs) {
+          let text = label.text,
+            newGlyphs = [],
+            newText = [],
+            glyphsChanged = false
+          for (let glyphIndex = 0; glyphIndex < glyphs.length; glyphIndex++) {
+            const glyph = glyphs[glyphIndex]
+            const dimensions = glyph.dimensions
+            if (
+              dimensions &&
+              isFinite(dimensions.width) &&
+              isFinite(dimensions.height)
+            ) {
+              newText.push(text[glyphIndex])
+              newGlyphs.push(glyph)
+            } else {
+              glyphsChanged = true
+            }
+          }
+          if (glyphsChanged) {
+            label._glyphs = newGlyphs
+            label.text = newText.join('')
+          }
+        }
+      }
 
       if (this.state === 'none' && preCommandList.length > 0) {
         this.setState('done')

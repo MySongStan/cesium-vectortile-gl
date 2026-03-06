@@ -308,6 +308,12 @@ export class VectorTileset {
     for (const cacheTile of this._cacheTiles) {
       cacheTile.unload()
     }
+    for (const cacheTile of this._tilesToRender) {
+      cacheTile.unload()
+    }
+    for (const cacheTile of this._tilesToUpdate) {
+      cacheTile.unload()
+    }
     this._tilesToRender.length = 0
     this._tilesToUpdate.length = 0
   }

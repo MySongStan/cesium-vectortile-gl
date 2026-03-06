@@ -671,6 +671,9 @@ czm_material czm_getMaterial(czm_materialInput materialInput)
         if (err.stack) console.trace(err.stack)
         else console.error(err)
         return
+      } finally {
+        //恢复系统的 commandList
+        frameState.commandList = preCommandList
       }
 
       //使用合批后的 drawCommand 创建副本，为渲染图层分配 drawCommand
@@ -682,13 +685,15 @@ czm_material czm_getMaterial(czm_materialInput materialInput)
         this.setState('error')
       }
 
-      //恢复系统的 commandList
-      frameState.commandList = preCommandList
       this.geometryInstances = []
     }
 
     if (this.primitive && frameState.camera.pitch > -1.309) {
       warnOnce('line图层：不支持透视，建议保持相机俯仰角（pitch）小于 -75 度')
+    }
+
+    if (this._batchTable && this._batchTable._batchValuesDirty) {
+      this._batchTable.update(frameState)
     }
   }
 

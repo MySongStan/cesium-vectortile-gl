@@ -27,10 +27,15 @@ export class FillRenderLayer extends IRenderLayer {
         feature.fillColor = fillColor
         feature.fillOpacity = fillOpacity
 
-        const id = feature.id
+        const batchId = feature.batchId
         const colorBytes = fillColor.toBytes()
         colorBytes[3] = Math.floor(colorBytes[3] * fillOpacity)
-        batchTable.setBatchedAttribute(id, 0, colorBytes)
+        batchTable.setBatchedAttribute(batchId, 0, {
+          x: colorBytes[0],
+          y: colorBytes[1],
+          z: colorBytes[2],
+          w: colorBytes[3]
+        })
       }
 
       this.paintNeedsUpdate = false

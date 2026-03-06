@@ -122,10 +122,15 @@ export class LineRenderLayer extends IRenderLayer {
         feature.lineOpacity = lineOpacity
         feature.lineWidth = lineWidth
 
-        const id = feature.id
+        const batchId = feature.batchId
         const colorBytes = lineColor.toBytes()
         colorBytes[3] = Math.floor(colorBytes[3] * lineOpacity)
-        batchTable.setBatchedAttribute(id, 0, colorBytes)
+        batchTable.setBatchedAttribute(batchId, 0, {
+          x: colorBytes[0],
+          y: colorBytes[1],
+          z: colorBytes[2],
+          w: colorBytes[3]
+        })
       }
 
       this.paintNeedsUpdate = false

@@ -515,6 +515,9 @@ void main()
         if (err.stack) console.trace(err.stack)
         else console.error(err)
         return
+      } finally {
+        //恢复系统的 commandList
+        frameState.commandList = preCommandList
       }
 
       //使用合批后的 drawCommand 创建副本，为渲染图层分配 drawCommand
@@ -526,9 +529,11 @@ void main()
         this.setState('error')
       }
 
-      //恢复系统的 commandList
-      frameState.commandList = preCommandList
       this.geometryInstances = []
+    }
+
+    if (this._batchTable && this._batchTable._batchValuesDirty) {
+      this._batchTable.update(frameState)
     }
   }
 

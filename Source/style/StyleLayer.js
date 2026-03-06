@@ -40,6 +40,7 @@ export class StyleLayer {
     if (!filter) {
       const changed = Cesium.defined(this.filter)
       this.filter = null
+      delete this.data.filter
       return changed
     } else if (JSON.stringify(this.data.filter) !== JSON.stringify(filter)) {
       this.data.filter = filter

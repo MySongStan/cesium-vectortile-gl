@@ -80,6 +80,21 @@ export class BackgroundRenderLayer extends IRenderLayer {
 
       frameState.commandList = preCommandList
     }
+    if (this.primitive && this.paintNeedsUpdate) {
+      const style = this.style,
+        tile = this.tile
+      const color = style.convertColor(
+        style.paint.getDataConstValue('background-color', tile.z)
+      )
+      const opacity = style.paint.getDataConstValue(
+        'background-opacity',
+        tile.z
+      )
+      color.alpha *= opacity
+      this.primitive.appearance.material.uniforms.color = color
+
+      this.paintNeedsUpdate = false
+    }
   }
 
   destroy() {

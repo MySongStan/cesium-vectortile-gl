@@ -92,6 +92,7 @@ export class FillLayerVisualizer extends ILayerVisualizer {
         }
 
         scope.addFeature(fillFeature, granularity)
+        layer.features.push(fillFeature)
 
         featureId++
       }
@@ -427,6 +428,9 @@ void main()
    */
   onBatchTableCreated(batchTable) {
     this._batchTable = batchTable
+    for (const layer of this.layers) {
+      layer._batchTable = batchTable
+    }
   }
 
   /**

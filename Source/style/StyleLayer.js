@@ -21,6 +21,32 @@ export class StyleLayer {
     if (layer.filter) {
       this.filter = featureFilter(layer.filter)
     }
+    this.paintVersion = 0
+  }
+
+  setLayoutProperty(name, value) {
+    return this.layout.setProperty(name, value)
+  }
+
+  setPaintProperty(name, value) {
+    const changed = this.paint.setProperty(name, value)
+    if (changed) {
+      this.paintVersion++
+    }
+    return changed
+  }
+
+  setFilter(filter) {
+    if (!filter) {
+      const changed = Cesium.defined(this.filter)
+      this.filter = null
+      return changed
+    } else if (JSON.stringify(this.data.filter) !== JSON.stringify(filter)) {
+      this.data.filter = filter
+      this.filter = featureFilter(filter)
+      return true
+    }
+    return false
   }
 
   /**

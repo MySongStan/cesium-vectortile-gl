@@ -82,7 +82,8 @@ export class SymbolLayerVisualizer extends ILayerVisualizer {
       outlineWidth,
       outlineColor,
       textOffset,
-      textOrigin
+      textOrigin,
+      properties
     ) {
       if (
         !Cesium.Rectangle.contains(
@@ -116,6 +117,17 @@ export class SymbolLayerVisualizer extends ILayerVisualizer {
       label.batchId = labels.length
       labels.push(label)
       layer.labels.push(label)
+      layer.features.push({
+        text,
+        font,
+        textSize,
+        textColor,
+        outlineWidth,
+        outlineColor,
+        textOffset,
+        textOrigin,
+        properties
+      })
     }
 
     for (const sourceFeature of features) {
@@ -229,7 +241,8 @@ export class SymbolLayerVisualizer extends ILayerVisualizer {
           outlineWidth,
           outlineColor,
           textOffset,
-          textOrigin
+          textOrigin,
+          properties
         )
       } else if (geometryType == 'MultiPoint') {
         coordinates.forEach(coord => {
@@ -242,7 +255,8 @@ export class SymbolLayerVisualizer extends ILayerVisualizer {
             outlineWidth,
             outlineColor,
             textOffset,
-            textOrigin
+            textOrigin,
+            properties
           )
         })
       } else {

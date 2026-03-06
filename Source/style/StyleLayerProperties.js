@@ -1,10 +1,12 @@
 import { expression, latest } from '@maplibre/maplibre-gl-style-spec'
+import { warnOnce } from 'maplibre-gl/src/util/util'
 
 export class StyleLayerProperties {
   constructor(groupName, styleProperties = {}) {
     this.data = styleProperties
     /**@type {Map<string,import('@maplibre/maplibre-gl-style-spec').StylePropertyExpression>} */
     this.props = new Map()
+    this.groupName = groupName
 
     const groupReference = latest[groupName]
     for (const key in groupReference) {
@@ -17,6 +19,26 @@ export class StyleLayerProperties {
         )
         this.props.set(key, property)
       }
+    }
+  }
+
+  setProperty(name, value) {
+    const groupReference = latest[this.groupName]
+    if (Object.hasOwnProperty.call(groupReference, name)) {
+      const reference = groupReference[name]
+      const oldValue = this.data[name]
+      if (oldValue === value) {
+        return false
+      }
+      const property = expression.normalizePropertyExpression(
+        !Cesium.defined(value) ? reference.default : value,
+        reference
+      )
+      this.props.set(name, property)
+      return true
+    } else {
+      warnOnce(`maplibre样式规范不支持属性：${this.groupName}.${name}`)
+      return false
     }
   }
 

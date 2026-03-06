@@ -82,6 +82,10 @@ export class IRenderLayer {
      * @type {'none'|'done'|'error'}
      */
     this.state = 'none'
+    /**
+     * 绘制（paint）属性版本号，用于监听绘制属性变化
+     */
+    this.paintVersion = styleLayer.paintVersion
   }
 
   get id() {
@@ -90,6 +94,15 @@ export class IRenderLayer {
 
   get type() {
     return this.style.type
+  }
+
+  get paintNeedsUpdate() {
+    return this.paintVersion !== this.style.paintVersion
+  }
+  set paintNeedsUpdate(val) {
+    if (!val) {
+      this.paintVersion = this.style.paintVersion
+    }
   }
 
   /**

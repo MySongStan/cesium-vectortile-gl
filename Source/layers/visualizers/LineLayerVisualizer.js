@@ -92,6 +92,7 @@ export class LineLayerVisualizer extends ILayerVisualizer {
       }
 
       scope.addFeature(lineFeature)
+      layer.features.push(lineFeature)
 
       featureId++
     }
@@ -560,6 +561,9 @@ czm_material czm_getMaterial(czm_materialInput materialInput)
    */
   onBatchTableCreated(batchTable) {
     this._batchTable = batchTable
+    for (const layer of this.layers) {
+      layer._batchTable = batchTable
+    }
   }
 
   /**

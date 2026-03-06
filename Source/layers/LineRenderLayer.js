@@ -5,6 +5,7 @@ import { IRenderLayer } from './IRenderLayer'
 import { registerRenderLayer } from './registerRenderLayer'
 import { VectorTileLOD } from '../VectorTileLOD'
 import { LineLayerVisualizer } from './visualizers/LineLayerVisualizer'
+import { warnOnce } from 'maplibre-gl/src/util/util'
 
 export class LineRenderLayer extends IRenderLayer {
   /**
@@ -91,7 +92,44 @@ export class LineRenderLayer extends IRenderLayer {
     // }
     // if (this.primitive && this.primitive.length) {
     //     this.primitive.update(frameState)
+    //     this._batchTable = primitive._batchTable
     // }
+    if (this.paintNeedsUpdate) {
+      const style = this.style,
+        tile = this.tile,
+        batchTable = this._batchTable
+
+      for (const feature of this.features) {
+        const lineWidth = style.paint.getDataValue(
+          'line-width',
+          tile.z,
+          feature
+        )
+        const lineColor = style.convertColor(
+          style.paint.getDataValue('line-color', tile.z, feature)
+        )
+        const lineOpacity = style.paint.getDataValue(
+          'line-opacity',
+          tile.z,
+          feature
+        )
+
+        if (lineWidth !== feature.lineWidth) {
+          warnOnce('不支持动态修改 line 图层样式属性：line-width')
+        }
+
+        feature.lineColor = lineColor
+        feature.lineOpacity = lineOpacity
+        feature.lineWidth = lineWidth
+
+        const id = feature.id
+        const colorBytes = lineColor.toBytes()
+        colorBytes[3] = Math.floor(colorBytes[3] * lineOpacity)
+        batchTable.setBatchedAttribute(id, 0, colorBytes)
+      }
+
+      this.paintNeedsUpdate = false
+    }
     super.update(frameState, tileset)
   }
 

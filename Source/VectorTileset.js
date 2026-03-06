@@ -33,6 +33,7 @@ export class VectorTileset {
     this._tilesToRender = []
     /**@type {StyleLayer[]} */
     this._styleLayers = []
+    this._styleLayerIndexMap = new Map()
     /**@type {VectorTileRenderList} */
     this._renderList = new VectorTileRenderList(this._styleLayers)
     this.numLoading = 0
@@ -95,6 +96,7 @@ export class VectorTileset {
     //初始化样式图层
     for (let i = 0; i < style.layers.length; i++) {
       this._styleLayers[i] = new StyleLayer(style.layers[i])
+      this._styleLayerIndexMap.set(style.layers[i].id, i)
     }
 
     //创建顶级瓦片LOD
@@ -255,6 +257,59 @@ export class VectorTileset {
         if (expiredTiles.length <= 50) break
       }
     }
+  }
+
+  //样式编辑API
+
+  setLayoutProperty(layerId, name, value) {
+    const styleLayerIndexMap = this._styleLayerIndexMap
+    if (!styleLayerIndexMap.has(layerId)) {
+      warnOnce(`不存在图层：${layerId}`)
+      return false
+    }
+    const layerIndex = styleLayerIndexMap.get(layerId)
+    const styleLayer = this._styleLayers[layerIndex]
+    const changed = styleLayer.setLayoutProperty(name, value)
+    //强制更新
+    if (changed && name !== 'visibility') {
+      this._forceUpdate()
+    }
+    return changed
+  }
+
+  setPaintProperty(layerId, name, value) {
+    const styleLayerIndexMap = this._styleLayerIndexMap
+    if (!styleLayerIndexMap.has(layerId)) {
+      warnOnce(`不存在图层：${layerId}`)
+      return false
+    }
+    const layerIndex = styleLayerIndexMap.get(layerId)
+    const styleLayer = this._styleLayers[layerIndex]
+    return styleLayer.setPaintProperty(name, value)
+  }
+
+  setFilter(layerId, filter) {
+    const styleLayerIndexMap = this._styleLayerIndexMap
+    if (!styleLayerIndexMap.has(layerId)) {
+      warnOnce(`不存在图层：${layerId}`)
+      return false
+    }
+    const layerIndex = styleLayerIndexMap.get(layerId)
+    const styleLayer = this._styleLayers[layerIndex]
+    const changed = styleLayer.setFilter(filter)
+    if (changed) {
+      this._forceUpdate()
+    }
+    return changed
+  }
+
+  //强制更新
+  _forceUpdate() {
+    for (const cacheTile of this._cacheTiles) {
+      cacheTile.unload()
+    }
+    this._tilesToRender.length = 0
+    this._tilesToUpdate.length = 0
   }
 
   destroy() {

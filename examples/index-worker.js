@@ -14,9 +14,9 @@ const workerUrl =
 const viewer = new Cesium.Viewer(document.body, {
   creditContainer: document.createElement('div'),
   scene3DOnly: true,
-  contextOptions: {
-    requestWebgl1: true
-  },
+  // contextOptions: {
+  //   requestWebgl1: true
+  // },
   infoBox: true
 })
 viewer.resolutionScale = devicePixelRatio
@@ -36,9 +36,10 @@ viewer.entities.add({
 
 // 启用 Web Worker：仅对 vector 源生效，瓦片解析与几何计算在子线程执行
 const tileset = new VectorTileset({
-  style: '/assets/demotiles/style.json',
+  // style: '/assets/demotiles/style.json',
+  style: '/assets/demotiles/plain.json',
   workerUrl,
-  maximumActiveTasks: 4
+  workerPoolSize: 4
 })
 viewer.scene.primitives.add(tileset)
 

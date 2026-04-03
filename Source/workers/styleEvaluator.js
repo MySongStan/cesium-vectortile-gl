@@ -135,12 +135,17 @@ export function evaluateSymbolLayout(styleLayer, zoom, feature) {
   const textTransform = get('text-transform')
   if (textTransform === 'uppercase') text = String(text).toUpperCase()
   else if (textTransform === 'lowercase') text = String(text).toLowerCase()
+  const textKeepUpright = get('text-keep-upright')
   return {
     text: text || '',
     font: get('text-font') || 'Open Sans Regular, Arial Unicode MS Regular',
     textSize: get('text-size') ?? 16,
     textAnchor: get('text-anchor') || 'center',
-    textOffset: get('text-offset') || [0, 0]
+    textOffset: get('text-offset') || [0, 0],
+    symbolPlacement: get('symbol-placement') ?? 'point',
+    symbolSpacing: get('symbol-spacing') ?? 250,
+    textKeepUpright: textKeepUpright !== false,
+    textRotationAlignment: get('text-rotation-alignment') ?? 'map'
   }
 }
 

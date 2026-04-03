@@ -23,6 +23,10 @@ import {
   evaluateSymbolPaint,
   colorToBytes
 } from './styleEvaluator.js'
+import {
+  computeLineSymbolPlacements,
+  symbolSpacingToMeters
+} from '../symbol/lineSymbolPlacement.js'
 
 /**
  * 解析瓦片 buffer 为 VectorTile 或 MLTVectorTile
@@ -47,6 +51,9 @@ function parseTile(buffer, encoding) {
  * @param {number} [parameters.extent]
  * @param {Array<{id:string,type:string,source:string,sourceLayer?:string,filter?:object,paint?:object,layout?:object}>} parameters.styleLayers
  * @returns {{ fill: Array, line: Array, symbol: Array, parsedSources?: object }}
+ *
+ * 取消策略：主线程通过瓦片 unload 递增 epoch 丢弃迟到结果；不在此函数内做协作式中断
+ *（避免依赖 SharedArrayBuffer / cross-origin isolated）。若将来需要减少无效 CPU，可在长循环中检查共享标记。
  */
 export function processTileTask(parameters) {
   const {
@@ -170,6 +177,60 @@ function buildGeometryResult(layerResult, extent, x, y, z) {
   return out
 }
 
+function openLonLatRing(ring) {
+  if (ring.length < 2) return ring
+  const a = ring[0]
+  const b = ring[ring.length - 1]
+  if (Math.abs(a[0] - b[0]) < 1e-10 && Math.abs(a[1] - b[1]) < 1e-10) {
+    return ring.slice(0, -1)
+  }
+  return ring
+}
+
+function vtRingToLonLat(ring, size, x0, y0, coordDeg) {
+  const pts = []
+  for (let pi = 0; pi < ring.length; pi++) {
+    const p = ring[pi]
+    transformPoint(p.x, p.y, size, x0, y0, coordDeg)
+    pts.push([coordDeg[0], coordDeg[1]])
+  }
+  return openLonLatRing(pts)
+}
+
+function pushPointPlacementsFromRing(
+  firstRing,
+  layout,
+  paint,
+  textColorBytes,
+  outlineColorBytes,
+  feature,
+  size,
+  x0,
+  y0,
+  coordDeg,
+  placements
+) {
+  for (let pi = 0; pi < firstRing.length; pi++) {
+    const p = firstRing[pi]
+    transformPoint(p.x, p.y, size, x0, y0, coordDeg)
+    placements.push({
+      coord: [coordDeg[0], coordDeg[1]],
+      text: layout.text,
+      font: layout.font,
+      textSize: layout.textSize,
+      textColorBytes: Array.from(textColorBytes),
+      outlineWidth: paint.outlineWidth,
+      outlineColorBytes: Array.from(outlineColorBytes),
+      textOffset: layout.textOffset,
+      textAnchor: layout.textAnchor,
+      rotationRad: 0,
+      linePlacement: false,
+      id: feature.id ?? feature.properties?.id ?? null,
+      properties: feature.properties || {}
+    })
+  }
+}
+
 /**
  * Symbol 图层：输出每个符号的 placement（coord, text, style 等），主线程用其创建 Cesium.Label
  */
@@ -180,32 +241,83 @@ function buildSymbolPlacements(item, extent, size, x0, y0) {
 
   for (const { feature } of features) {
     const type = VectorTileFeature.types[feature.type]
-    if (type !== 'Point' && type !== 'Unknown') continue
-    const vtCoords = loadGeometry(feature)
-    if (!vtCoords.length || !vtCoords[0].length) continue
     const layout = evaluateSymbolLayout(styleLayer, z, feature)
     if (!layout.text) continue
     const paint = evaluateSymbolPaint(styleLayer, z, feature)
     const textColorBytes = colorToBytes(paint.textColor)
     const outlineColorBytes = colorToBytes(paint.outlineColor)
-    const firstRing = vtCoords[0]
-    for (let pi = 0; pi < firstRing.length; pi++) {
-      const p = firstRing[pi]
-      transformPoint(p.x, p.y, size, x0, y0, coordDeg)
-      placements.push({
-        coord: [coordDeg[0], coordDeg[1]],
-        text: layout.text,
-        font: layout.font,
-        textSize: layout.textSize,
-        textColorBytes: Array.from(textColorBytes),
-        outlineWidth: paint.outlineWidth,
-        outlineColorBytes: Array.from(outlineColorBytes),
-        textOffset: layout.textOffset,
-        textAnchor: layout.textAnchor,
-        id: feature.id ?? feature.properties?.id ?? null,
-        properties: feature.properties || {}
-      })
+    const placementMode = layout.symbolPlacement || 'point'
+
+    if (placementMode === 'line' || placementMode === 'line-center') {
+      const vtCoords = loadGeometry(feature)
+      if (!vtCoords.length) continue
+      /** @type {Array<Array<[number, number]>>} */
+      const lineRings = []
+      if (type === 'LineString') {
+        for (let ri = 0; ri < vtCoords.length; ri++) {
+          const ring = vtRingToLonLat(vtCoords[ri], size, x0, y0, coordDeg)
+          if (ring.length >= 2) lineRings.push(ring)
+        }
+      } else if (type === 'Polygon') {
+        const polygons = classifyRings(vtCoords)
+        for (const coordinates of polygons) {
+          if (!coordinates[0] || coordinates[0].length < 2) continue
+          const ring = vtRingToLonLat(coordinates[0], size, x0, y0, coordDeg)
+          if (ring.length >= 2) lineRings.push(ring)
+        }
+      }
+      if (!lineRings.length) continue
+      const midLat =
+        lineRings[0].reduce((s, p) => s + p[1], 0) / lineRings[0].length
+      const spacingMeters = symbolSpacingToMeters(
+        z,
+        midLat,
+        layout.symbolSpacing
+      )
+      for (const ringLonLat of lineRings) {
+        const anchors = computeLineSymbolPlacements(ringLonLat, {
+          placement: placementMode,
+          spacingMeters,
+          textKeepUpright: layout.textKeepUpright
+        })
+        for (const a of anchors) {
+          placements.push({
+            coord: [a.lon, a.lat],
+            text: layout.text,
+            font: layout.font,
+            textSize: layout.textSize,
+            textColorBytes: Array.from(textColorBytes),
+            outlineWidth: paint.outlineWidth,
+            outlineColorBytes: Array.from(outlineColorBytes),
+            textOffset: layout.textOffset,
+            textAnchor: layout.textAnchor,
+            rotationRad: a.rotationRad,
+            linePlacement: true,
+            id: feature.id ?? feature.properties?.id ?? null,
+            properties: feature.properties || {}
+          })
+        }
+      }
+      continue
     }
+
+    if (type !== 'Point' && type !== 'Unknown') continue
+    const vtCoords = loadGeometry(feature)
+    if (!vtCoords.length || !vtCoords[0].length) continue
+    const firstRing = vtCoords[0]
+    pushPointPlacementsFromRing(
+      firstRing,
+      layout,
+      paint,
+      textColorBytes,
+      outlineColorBytes,
+      feature,
+      size,
+      x0,
+      y0,
+      coordDeg,
+      placements
+    )
   }
   return placements
 }

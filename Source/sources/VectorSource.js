@@ -1,6 +1,6 @@
 import { ISource } from './ISource'
 import { registerSource } from './registerSource'
-import { VectorTile, VectorTileFeature } from '@mapbox/vector-tile'
+import { VectorTile } from '@mapbox/vector-tile'
 import { MLTVectorTile } from 'maplibre-gl/src/source/vector_tile_mlt'
 import Pbf from 'pbf'
 

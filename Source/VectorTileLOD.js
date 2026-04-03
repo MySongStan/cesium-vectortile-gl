@@ -133,9 +133,13 @@ export class VectorTileLOD {
     this.lastVisitTime = 0
     /**
      * 瓦片调度状态
-     * @type {'none'|'loading'|'loaded'|'ready'|'error'}
+     * @type {'none'|'loading'|'loaded'|'initializing'|'ready'|'error'}
      */
     this.state = 'none'
+    /**
+     * unload 时自增，用于丢弃已取消瓦片对应的 Worker 迟到的结果
+     */
+    this._workerEpoch = 0
     this.renderable = false
 
     this.tileId = {
@@ -244,7 +248,8 @@ export class VectorTileLOD {
     }
 
     const useWorker =
-      tileset._taskProcessor &&
+      tileset._workerPool &&
+      !tileset._workerPool.isDestroyed() &&
       Object.values(sourcesToLoad).every(s => s.type === 'vector')
 
     if (useWorker) {
@@ -369,7 +374,10 @@ export class VectorTileLOD {
    * @param {VectorTileset} tileset
    */
   createRenderLayersFromWorkerResult(result, frameState, tileset) {
-    if (result.error) {
+    if (this.state !== 'initializing') {
+      return
+    }
+    if (!result || result.error) {
       this.state = 'error'
       return
     }
@@ -556,7 +564,7 @@ export class VectorTileLOD {
       this.state === 'loaded' &&
       tileset.numInitializing < tileset.maxInitializing
     ) {
-      if (this._workerBuffers && tileset._taskProcessor) {
+      if (this._workerBuffers && tileset._workerPool) {
         const parameters = {
           sources: {},
           x: this.x,
@@ -584,25 +592,33 @@ export class VectorTileLOD {
             transferableObjects.push(data.buffer)
           }
         }
-        const promise = tileset._taskProcessor.scheduleTask(
-          parameters,
-          transferableObjects
-        )
-        if (Cesium.defined(promise)) {
-          this.state = 'initializing'
-          tileset.numInitializing++
-          promise
-            .then(result => {
-              this.createRenderLayersFromWorkerResult(
-                result,
-                frameState,
-                tileset
-              )
-            })
-            .catch(() => {
-              this.state = 'error'
-            })
-        }
+        const startedEpoch = this._workerEpoch
+        this.state = 'initializing'
+        tileset.numInitializing++
+        tileset._workerPool
+          .schedule(parameters, transferableObjects)
+          .then(result => {
+            if (
+              startedEpoch !== this._workerEpoch ||
+              this.state !== 'initializing'
+            ) {
+              return
+            }
+            this.createRenderLayersFromWorkerResult(
+              result,
+              frameState,
+              tileset
+            )
+          })
+          .catch(() => {
+            if (
+              startedEpoch !== this._workerEpoch ||
+              this.state !== 'initializing'
+            ) {
+              return
+            }
+            this.state = 'error'
+          })
       } else {
         this.state = 'initializing'
         tileset.numInitializing++
@@ -664,6 +680,7 @@ export class VectorTileLOD {
    * 卸载瓦片，当瓦片过期（不可见，且符合其他过期规则）时，释放pbf/mvt解析数据、图层渲染对象等资源，重置瓦片状态
    */
   unload() {
+    this._workerEpoch++
     //释放用于展示瓦片范围的primitive
     if (this.primitive) {
       this.primitive.destroy()

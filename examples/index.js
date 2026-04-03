@@ -4,9 +4,9 @@ import { VectorTileset } from '../Source/VectorTileset'
 const viewer = new Cesium.Viewer(document.body, {
   creditContainer: document.createElement('div'),
   scene3DOnly: true,
-  contextOptions: {
-    requestWebgl1: true
-  },
+  // contextOptions: {
+  //   requestWebgl1: true
+  // },
   infoBox: true
 })
 viewer.resolutionScale = devicePixelRatio

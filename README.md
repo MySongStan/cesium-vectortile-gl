@@ -116,6 +116,8 @@ tileset.readyEvent.addEventListener(() => {
 
 将瓦片解析、坐标转换、几何构建放到子线程，减轻主线程卡顿。不传 `workerUrl` 时仍走主线程。
 
+内部使用 **多个 Worker 实例组成的池**（`workerPoolSize`），同一时刻可并行处理多块瓦片；单块瓦片仍为一个 Worker 任务（与原先 Cesium `TaskProcessor` 单线程排队不同）。瓦片 **unload** 后会丢弃对应 Worker 的迟到结果，避免已卸载瓦片被错误“复活”。
+
 ```js
 import {
   VectorTileset,
@@ -131,12 +133,13 @@ const workerUrl = new URL(
 const tileset = new VectorTileset({
   style: '/assets/demotiles/style.json',
   workerUrl,
-  maximumActiveTasks: 4
+  workerPoolSize: 4
 })
 ```
 
 - 仅对 **vector** 源生效；若瓦片含 GeoJSON 源则自动回退到主线程。
-- `maximumActiveTasks` 与 `maxLoading`/`maxInitializing` 配合，控制并发数。
+- `workerPoolSize` 为并行 Worker 数量，并会与 `maxInitializing` 取较小值作为池大小；`maximumActiveTasks` 为旧参数名，效果与 `workerPoolSize` 相同。
+- 任务在主线程侧排队：池满时 `schedule` 仍会返回 Promise，不再依赖“下一帧重试”。
 - 本地示例：运行 `npm run dev` 后打开 [worker.html](worker.html) 可查看启用 Web Worker 的示例。
 - **性能对比**：在浏览器中打开 [benchmark.html](benchmark.html)，点击「运行性能对比」可测量主线程 vs Worker 的帧时间、长帧数等（无需 Vitest，需真实浏览器与 WebGL）。
 

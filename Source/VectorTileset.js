@@ -6,6 +6,7 @@ import { Sources } from './sources'
 import { ISource } from './sources/ISource'
 import { warnOnce } from 'maplibre-gl/src/util/util'
 import { SymbolPlacements } from './symbol/SymbolPlacements'
+import { VectorTileWorkerPool } from './workers/VectorTileWorkerPool.js'
 
 export class VectorTileset {
   /**
@@ -13,7 +14,8 @@ export class VectorTileset {
    * @param {string|import('@maplibre/maplibre-gl-style-spec').StyleSpecification} options.style
    * @param {boolean} [options.showTileColor=false]
    * @param {string} [options.workerUrl] - Web Worker 脚本 URL，用于瓦片解析/几何计算；不传则走主线程
-   * @param {number} [options.maximumActiveTasks=4] - 同时进行的 Worker 任务数，与 maxLoading 配合
+   * @param {number} [options.workerPoolSize] - 并行 Worker 数量（真多线程）；默认 min(4, hardwareConcurrency)
+   * @param {number} [options.maximumActiveTasks] - 已弃用，等同于 workerPoolSize，保留兼容
    */
   constructor(options) {
     this.maximumLevel = 24
@@ -40,10 +42,18 @@ export class VectorTileset {
     this.maxLoading = 6
     this.numInitializing = 0
     this.maxInitializing = 6
-    /**@type {Cesium.TaskProcessor|null} */
-    this._taskProcessor = null
+    /** @type {VectorTileWorkerPool|null} */
+    this._workerPool = null
     this._workerUrl = options.workerUrl || null
-    this._maximumActiveTasks = options.maximumActiveTasks ?? 4
+    const hw =
+      typeof navigator !== 'undefined' && navigator.hardwareConcurrency
+        ? navigator.hardwareConcurrency
+        : 4
+    const defaultPoolSize = Math.min(4, Math.max(1, hw))
+    this._workerPoolSize =
+      options.workerPoolSize ??
+      options.maximumActiveTasks ??
+      defaultPoolSize
     /**@type {Cesium.Texture} */
     this.tileIdTexture = null
     this.zoom = 0
@@ -120,12 +130,10 @@ export class VectorTileset {
     //初始化渲染队列
     this._renderList.init()
 
-    // Web Worker：有 workerUrl 时创建 TaskProcessor，供瓦片解析/几何计算使用
-    if (this._workerUrl && typeof Cesium.TaskProcessor !== 'undefined') {
-      this._taskProcessor = new Cesium.TaskProcessor(
-        this._workerUrl,
-        Math.min(this._maximumActiveTasks, this.maxInitializing)
-      )
+    // Web Worker：有 workerUrl 时创建多 Worker 池，瓦片任务可真正并行执行
+    if (this._workerUrl && typeof Worker !== 'undefined') {
+      const n = Math.min(this._workerPoolSize, this.maxInitializing)
+      this._workerPool = new VectorTileWorkerPool(this._workerUrl, n)
     }
 
     this._styleJson = style
@@ -354,9 +362,9 @@ export class VectorTileset {
       this._renderList = null
     }
 
-    if (this._taskProcessor && !this._taskProcessor.isDestroyed()) {
-      this._taskProcessor.destroy()
-      this._taskProcessor = null
+    if (this._workerPool && !this._workerPool.isDestroyed()) {
+      this._workerPool.destroy()
+      this._workerPool = null
     }
 
     if (this._tilesToUpdate) {

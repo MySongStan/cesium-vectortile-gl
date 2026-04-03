@@ -85,10 +85,12 @@ export class SymbolPlacements {
           scratchScreenSpaceBoundingBox
         )
 
-        const tlX = box.x - textPadding,
-          tlY = box.y - textPadding,
-          brX = tlX + box.width + textPadding,
-          brY = tlY + box.height + textPadding
+        const linePad = label.vtLinePlacement ? 4 : 0
+        const pad = textPadding + linePad
+        const tlX = box.x - pad,
+          tlY = box.y - pad,
+          brX = tlX + box.width + pad,
+          brY = tlY + box.height + pad
         if (!grid.hitTest(tlX, tlY, brX, brY, textOverlapMode, null)) {
           //二维包围盒碰撞检测
           const textKey = { overlapMode: textOverlapMode }

@@ -365,6 +365,9 @@
         "text-field": "{name}",
         "visibility": "visible",
         "symbol-placement": "line",
+        "symbol-spacing": 280,
+        "text-rotation-alignment": "map",
+        "text-keep-upright": true,
         "text-pitch-alignment": "viewport"
       },
       "source": "maplibre",

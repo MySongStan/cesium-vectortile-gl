@@ -224,7 +224,7 @@ async function runBenchmark(swap = false) {
         ? {
             style: '/assets/demotiles/style.json',
             workerUrl,
-            maximumActiveTasks: 4
+            workerPoolSize: 4
           }
         : { style: '/assets/demotiles/style.json' }
     )
@@ -263,7 +263,7 @@ async function runBenchmark(swap = false) {
         : {
             style: '/assets/demotiles/style.json',
             workerUrl,
-            maximumActiveTasks: 4
+            workerPoolSize: 4
           }
     )
     viewerRight.scene.primitives.add(tilesetRight)

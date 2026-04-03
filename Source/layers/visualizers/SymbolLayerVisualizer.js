@@ -2,6 +2,10 @@ import { VectorTileFeature } from '@mapbox/vector-tile'
 import { ILayerVisualizer } from './ILayerVisualizer'
 import { SymbolRenderLayer } from '../SymbolRenderLayer'
 import { warnOnce } from 'maplibre-gl/src/util/util'
+import {
+  computeLineSymbolPlacements,
+  symbolSpacingToMeters
+} from '../../symbol/lineSymbolPlacement.js'
 
 export class SymbolFeature {
   constructor() {
@@ -16,15 +20,53 @@ export class SymbolFeature {
 let scratchDirectionToEye = null
 /**@type {Cesium.Cartesian3} */
 let scratchSurfaceNormal = null
+/**@type {Cesium.Cartesian3} */
+let scratchGeodeticNormal = null
 
 /** 淡入淡出每帧向目标透明度的插值系数，约 0.10 时 ~10帧完成过渡，越小越慢 */
 const FADE_SPEED = 0.1
+
+function openLonLatRing(ring) {
+  if (!ring || ring.length < 2) return ring
+  const a = ring[0]
+  const b = ring[ring.length - 1]
+  if (Math.abs(a[0] - b[0]) < 1e-10 && Math.abs(a[1] - b[1]) < 1e-10) {
+    return ring.slice(0, -1)
+  }
+  return ring
+}
+
+/**
+ * 沿线标注：为每个字形 Billboard 设置椭球法向与绕法向旋转（地图切向）
+ * @param {Cesium.Label} label
+ */
+function syncLineLabelBillboards(label) {
+  if (!label.vtLinePlacement) return
+  const ellipsoid = Cesium.Ellipsoid.WGS84
+  ellipsoid.geodeticSurfaceNormal(label.position, scratchGeodeticNormal)
+  const glyphs = label._glyphs
+  if (glyphs && glyphs.length > 0) {
+    for (let i = 0; i < glyphs.length; i++) {
+      const b = glyphs[i].billboard
+      if (b) {
+        Cesium.Cartesian3.clone(scratchGeodeticNormal, b.alignedAxis)
+        b.rotation = label.vtLineGlyphRotation
+      }
+    }
+  }
+  const bg = label._backgroundBillboard
+  if (bg) {
+    Cesium.Cartesian3.clone(scratchGeodeticNormal, bg.alignedAxis)
+    bg.rotation = label.vtLineGlyphRotation
+  }
+}
 
 export class SymbolLayerVisualizer extends ILayerVisualizer {
   constructor(layers, tile) {
     if (scratchDirectionToEye === null) {
       scratchDirectionToEye = new Cesium.Cartesian3()
       scratchSurfaceNormal = new Cesium.Cartesian3()
+      scratchGeodeticNormal = new Cesium.Cartesian3()
     }
 
     super(layers, tile)
@@ -83,7 +125,8 @@ export class SymbolLayerVisualizer extends ILayerVisualizer {
       outlineColor,
       textOffset,
       textOrigin,
-      properties
+      properties,
+      lineOpts
     ) {
       if (
         !Cesium.Rectangle.contains(
@@ -115,6 +158,10 @@ export class SymbolLayerVisualizer extends ILayerVisualizer {
       label._baseOutlineColor = label.outlineColor.clone()
       label.vtAlpha = 0
       label.batchId = labels.length
+      if (lineOpts && lineOpts.linePlacement) {
+        label.vtLinePlacement = true
+        label.vtLineGlyphRotation = lineOpts.rotationRad ?? 0
+      }
       labels.push(label)
       layer.labels.push(label)
       layer.features.push({
@@ -186,10 +233,27 @@ export class SymbolLayerVisualizer extends ILayerVisualizer {
         tile.z,
         sourceFeature
       )
+      const symbolPlacement =
+        style.layout.getDataValue('symbol-placement', tile.z, sourceFeature) ??
+        'point'
+      const symbolSpacing =
+        style.layout.getDataValue('symbol-spacing', tile.z, sourceFeature) ??
+        250
+      const textKeepUpright =
+        style.layout.getDataValue('text-keep-upright', tile.z, sourceFeature) !==
+        false
       if (text.length > maxWidth) {
         warnOnce('symbol图层： 不支持 text-max-width，无自动换行效果')
       }
-      if (textRotationAlignment === 'map') {
+      const isLinePlacement =
+        symbolPlacement === 'line' || symbolPlacement === 'line-center'
+      if (isLinePlacement) {
+        if (textRotationAlignment === 'viewport') {
+          warnOnce(
+            'symbol图层：沿线标注未实现 text-rotation-alignment:viewport，按 map 处理'
+          )
+        }
+      } else if (textRotationAlignment === 'map') {
         warnOnce('symbol图层：text-rotation-alignment 仅支持 viewport')
       }
       if (textPitchAlignment === 'map') {
@@ -231,7 +295,10 @@ export class SymbolLayerVisualizer extends ILayerVisualizer {
 
       const geometryType = feature.geometry.type
       const coordinates = feature.geometry.coordinates
+      const lineOrigin = getOrigin('center')
+
       if (geometryType == 'Point') {
+        if (isLinePlacement) continue
         addText(
           coordinates,
           text,
@@ -242,9 +309,11 @@ export class SymbolLayerVisualizer extends ILayerVisualizer {
           outlineColor,
           textOffset,
           textOrigin,
-          properties
+          properties,
+          null
         )
       } else if (geometryType == 'MultiPoint') {
+        if (isLinePlacement) continue
         coordinates.forEach(coord => {
           addText(
             coord,
@@ -256,11 +325,65 @@ export class SymbolLayerVisualizer extends ILayerVisualizer {
             outlineColor,
             textOffset,
             textOrigin,
-            properties
+            properties,
+            null
           )
         })
+      } else if (
+        geometryType == 'LineString' ||
+        geometryType == 'MultiLineString' ||
+        geometryType == 'Polygon'
+      ) {
+        if (!isLinePlacement) continue
+        /** @type {Array<Array<[number, number]>>} */
+        const rings = []
+        if (geometryType == 'LineString') {
+          const ring = openLonLatRing(coordinates)
+          if (ring.length >= 2) rings.push(ring)
+        } else if (geometryType == 'MultiLineString') {
+          for (const line of coordinates) {
+            const ring = openLonLatRing(line)
+            if (ring.length >= 2) rings.push(ring)
+          }
+        } else {
+          const outer = coordinates[0]
+          if (outer && outer.length >= 2) {
+            const ring = openLonLatRing(outer)
+            if (ring.length >= 2) rings.push(ring)
+          }
+        }
+        if (!rings.length) continue
+        const midLat =
+          rings[0].reduce((s, p) => s + p[1], 0) / rings[0].length
+        const spacingMeters = symbolSpacingToMeters(
+          tile.z,
+          midLat,
+          symbolSpacing
+        )
+        for (const ringLonLat of rings) {
+          const anchors = computeLineSymbolPlacements(ringLonLat, {
+            placement: symbolPlacement,
+            spacingMeters,
+            textKeepUpright
+          })
+          for (const a of anchors) {
+            addText(
+              [a.lon, a.lat],
+              text,
+              font,
+              textSize,
+              textColor,
+              outlineWidth,
+              outlineColor,
+              textOffset,
+              lineOrigin,
+              properties,
+              { linePlacement: true, rotationRad: a.rotationRad }
+            )
+          }
+        }
       } else {
-        warnOnce('symbol图层：不支持符号沿线布局')
+        warnOnce('symbol图层：不支持该几何类型上的符号')
       }
     }
 
@@ -300,7 +423,10 @@ export class SymbolLayerVisualizer extends ILayerVisualizer {
         p.outlineColorBytes[2],
         p.outlineColorBytes[3]
       )
-      const textOrigin = getOrigin(p.textAnchor)
+      const linePlacement = !!p.linePlacement
+      const textOrigin = linePlacement
+        ? getOrigin('center')
+        : getOrigin(p.textAnchor)
       const label = new Cesium.Label({
         position: Cesium.Cartesian3.fromDegrees(p.coord[0], p.coord[1]),
         text: p.text,
@@ -324,6 +450,10 @@ export class SymbolLayerVisualizer extends ILayerVisualizer {
       label._baseOutlineColor = label.outlineColor.clone()
       label.vtAlpha = 0
       label.batchId = labels.length
+      if (linePlacement) {
+        label.vtLinePlacement = true
+        label.vtLineGlyphRotation = p.rotationRad ?? 0
+      }
       labels.push(label)
       layer.labels.push(label)
     }
@@ -397,6 +527,7 @@ export class SymbolLayerVisualizer extends ILayerVisualizer {
             label.text = newText.join('')
           }
         }
+        syncLineLabelBillboards(label)
       }
 
       if (this.state === 'none' && preCommandList.length > 0) {
@@ -460,6 +591,10 @@ export class SymbolLayerVisualizer extends ILayerVisualizer {
     for (const label of this.labels) {
       if (label.show)
         label.show = !this.isOccluded(cameraPositionWC, label.position)
+    }
+
+    for (const label of this.labels) {
+      syncLineLabelBillboards(label)
     }
 
     if (this.primitive) {

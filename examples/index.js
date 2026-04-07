@@ -28,8 +28,19 @@ viewer.entities.add({
 
 //矢量瓦片集添加到Cesium场景
 
+// 调试：
+// ?rttBuffer=0（贴合）/ ?rttBuffer=64（观察内缩）
+// ?rttUvCorrection=0（关闭）/ ?rttUvCorrection=1（开启比例补偿）
+const query = new window.URLSearchParams(window.location.search)
+const debugBuffer = Number(query.get('rttBuffer') ?? 0)
+const rttBuffer = Number.isFinite(debugBuffer) ? Math.max(0, debugBuffer) : 0
+const uvCorrection = query.get('rttUvCorrection') === '1'
+
 const tileset = new VectorTileset({
-  style: '/assets/demotiles/style.json'
+  style: '/assets/demotiles/style.json',
+  rttGeometrySource: 'pbfRaw',
+  rttTileBufferExtentPbfRaw: rttBuffer,
+  rttUvCorrection: uvCorrection
 })
 viewer.scene.primitives.add(tileset)
 
@@ -52,3 +63,5 @@ viewer.entities.add({
 
 window.tileset = tileset
 window.viewer = viewer
+window.rttBuffer = rttBuffer
+window.rttUvCorrection = uvCorrection

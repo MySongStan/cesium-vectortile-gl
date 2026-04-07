@@ -15,8 +15,13 @@ export class VectorTileRenderList {
     this.tileIdCommands = []
     /**@type {Cesium.DrawCommand[]} */
     this.tileCommands = []
+    /** RTT 面贴地 DrawCommand：须在 line visualizer 之前提交，避免线被面盖住 */
+    /**@type {Cesium.DrawCommand[]} */
+    this.rttFillCommands = []
     /**@type {ILayerVisualizer[]} */
     this.visualizers = []
+    /**@type {import('./VectorTileLOD').VectorTileLOD[]} */
+    this.rttBuildTiles = []
   }
 
   init() {
@@ -28,7 +33,9 @@ export class VectorTileRenderList {
     }
     this.tileIdCommands.length = 0
     this.tileCommands.length = 0
+    this.rttFillCommands.length = 0
     this.visualizers.length = 0
+    this.rttBuildTiles.length = 0
   }
 
   beginFrame() {
@@ -38,7 +45,9 @@ export class VectorTileRenderList {
     }
     this.tileIdCommands.length = 0
     this.tileCommands.length = 0
+    this.rttFillCommands.length = 0
     this.visualizers.length = 0
+    this.rttBuildTiles.length = 0
   }
 
   push(renderLayer) {

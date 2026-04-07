@@ -7,20 +7,36 @@ import { ISource } from './sources/ISource'
 import { warnOnce } from 'maplibre-gl/src/util/util'
 import { SymbolPlacements } from './symbol/SymbolPlacements'
 import { VectorTileWorkerPool } from './workers/VectorTileWorkerPool.js'
+import {
+  TileRttCache,
+  TileStyleRevision
+} from './renderToMaterial'
+import { TileFeaturePicker } from './picking/TileFeaturePicker.js'
 
 export class VectorTileset {
   /**
    * @param {object} options
    * @param {string|import('@maplibre/maplibre-gl-style-spec').StyleSpecification} options.style
+   * @param {'maplibre8192'|'pbfRaw'} [options.rttGeometrySource='maplibre8192'] - RTT 面几何：`maplibre8192` 经 MapLibre loadGeometry 归一化；`pbfRaw` 直接用 MVT `feature.loadGeometry()` + `feature.extent`（常见 4096）
+   * @param {boolean} [options.rttUvCorrection=false] - 是否在材质采样阶段做 UV 比例补偿，缓解方形 RTT 贴地理矩形带来的拉伸观感
+   * @param {boolean} [options.enableRttVector=true] - 为 true 时仅 **fill（面）** 图层走离屏 RTT 贴地；line/symbol/background 仍走原 Visualizer
    * @param {boolean} [options.showTileColor=false]
    * @param {string} [options.workerUrl] - Web Worker 脚本 URL，用于瓦片解析/几何计算；不传则走主线程
    * @param {number} [options.workerPoolSize] - 并行 Worker 数量（真多线程）；默认 min(4, hardwareConcurrency)
    * @param {number} [options.maximumActiveTasks] - 已弃用，等同于 workerPoolSize，保留兼容
+   * @param {number} [options.rttResolutionScale=1] - RTT 纹理边长按档倍增，建议 0.5～2
+   * @param {number} [options.rttResolutionCap=2048] - RTT 单边像素上限（过大易占显存）
+   * @param {number} [options.rttTileBufferExtent=64] - RTT 纹理映射时的瓦片边缘缓冲（像素空间映射参数）
+   * @param {number} [options.rttTileBufferExtentPbfRaw=0] - `pbfRaw` 模式专用缓冲；未传时默认 0（更贴合 0..extent）
    */
   constructor(options) {
     this.maximumLevel = 24
     this.show = true
     this.showTileColor = !!options.showTileColor
+    this.enableRttVector = options.enableRttVector ?? true
+    this._rttGeometrySource =
+      options.rttGeometrySource === 'pbfRaw' ? 'pbfRaw' : 'maplibre8192'
+    this._rttUvCorrection = options.rttUvCorrection === true
     this.ready = false
     this.tilingScheme = new Cesium.WebMercatorTilingScheme()
 
@@ -61,6 +77,31 @@ export class VectorTileset {
      * 负责符号碰撞检测（自动避让），SymbolPlacements 内部基于 maplibre-gl GridIndex 实现
      */
     this._symbolPlacements = new SymbolPlacements()
+    this._styleRevision = new TileStyleRevision()
+    this._rttCache = new TileRttCache({
+      maxEntries: options.rttMaxEntries ?? 256,
+      maxBytes: options.rttMaxBytes ?? 512 * 1024 * 1024
+    })
+    this._rttBuildBudgetPerFrame = Math.max(1, options.rttBuildBudget ?? 4)
+    this._rttTileBufferExtent = Math.max(
+      0,
+      Math.floor(Number(options.rttTileBufferExtent) || 64)
+    )
+    this._rttTileBufferExtentPbfRaw = Math.max(
+      0,
+      Math.floor(Number(options.rttTileBufferExtentPbfRaw) || 0)
+    )
+    const scale = Number(options.rttResolutionScale)
+    this._rttResolutionScale =
+      Number.isFinite(scale) && scale > 0
+        ? Math.min(2, Math.max(0.5, scale))
+        : 1
+    const capOpt = Number(options.rttResolutionCap)
+    this._rttResolutionCap =
+      Number.isFinite(capOpt) && capOpt >= 64
+        ? Math.min(4096, Math.floor(capOpt))
+        : 2048
+    this._featurePicker = new TileFeaturePicker(this)
 
     requestAnimationFrame(() => {
       this.init()
@@ -218,6 +259,10 @@ export class VectorTileset {
       tile.update(frameState, renderList, this)
     }
 
+    if (this.enableRttVector) {
+      this._processRttBuildQueue(frameState)
+    }
+
     /**@type {VectorTileLOD[]} */
     const tilesToRender = globeSuspendLodUpdate
       ? this._tilesToRender
@@ -241,6 +286,7 @@ export class VectorTileset {
     for (const renderLayer of orderedRenderLayers) {
       renderLayer.render(frameState, this)
     }
+    frameState.commandList.push(...renderList.rttFillCommands)
     for (const visualizer of renderList.visualizers) {
       visualizer.render(frameState, this)
     }
@@ -248,6 +294,7 @@ export class VectorTileset {
     frameState.commandList.push(...renderList.tileCommands)
 
     this.executeTileIdCommands(frameState)
+    this._styleRevision.clearChangedLayers()
 
     //释放过期瓦片
     //优化：使用更高效的内存缓存管理策略
@@ -260,6 +307,12 @@ export class VectorTileset {
     expiredTiles.sort((a, b) => a.lastVisitTime - b.lastVisitTime)
     if (expiredTiles.length > 100) {
       for (const expiredTile of expiredTiles) {
+        this._rttCache?.delete(
+          expiredTile,
+          this._rttGeometrySource,
+          this.getRttTileBufferExtent(),
+          this.getRttUvCorrection()
+        )
         expiredTile.unload()
         expiredTile.expired = true
         if (expiredTiles.length <= 50) break
@@ -280,6 +333,7 @@ export class VectorTileset {
     const changed = styleLayer.setLayoutProperty(name, value)
     //强制更新
     if (changed && name !== 'visibility') {
+      this._styleRevision.bump(layerId)
       this._forceUpdate()
     }
     return changed
@@ -293,7 +347,11 @@ export class VectorTileset {
     }
     const layerIndex = styleLayerIndexMap.get(layerId)
     const styleLayer = this._styleLayers[layerIndex]
-    return styleLayer.setPaintProperty(name, value)
+    const changed = styleLayer.setPaintProperty(name, value)
+    if (changed) {
+      this._styleRevision.bump(layerId)
+    }
+    return changed
   }
 
   setFilter(layerId, filter) {
@@ -306,9 +364,67 @@ export class VectorTileset {
     const styleLayer = this._styleLayers[layerIndex]
     const changed = styleLayer.setFilter(filter)
     if (changed) {
+      this._styleRevision.bump(layerId)
       this._forceUpdate()
     }
     return changed
+  }
+
+  getRttResolution(tile, _frameState) {
+    const z = tile.z
+    const dist = tile.distanceToCamera ?? Number.MAX_VALUE
+    let base
+    // 每瓦片 color+id 各一张方形纹理；边长越大越清晰，显存与重建成本越高
+    if (z >= 14 && dist < 1.2e6) base = 2048
+    else if (z <= 7 || dist > 7.5e6) base = 512
+    else base = 1024
+    const scaled = Math.round(base * this._rttResolutionScale)
+    return Math.min(
+      this._rttResolutionCap,
+      Math.max(64, scaled)
+    )
+  }
+
+  getRttTileBufferExtent() {
+    if (this._rttGeometrySource === 'pbfRaw') {
+      return this._rttTileBufferExtentPbfRaw
+    }
+    return this._rttTileBufferExtent
+  }
+
+  getRttUvCorrection() {
+    return this._rttUvCorrection
+  }
+
+  _processRttBuildQueue(_frameState) {
+    const queue = this._renderList.rttBuildTiles
+    if (!queue.length) return
+    queue.sort((a, b) => a.distanceToCamera - b.distanceToCamera)
+    const styleRevision = this._styleRevision.revision
+    const budget = this._rttBuildBudgetPerFrame
+    let built = 0
+    for (let i = 0; i < queue.length; i++) {
+      if (built >= budget) break
+      const tile = queue[i]
+      const rtt = tile._rttRenderer
+      if (!rtt) continue
+      rtt.rebuildFromTile(tile, this, styleRevision)
+      tile._rttStyleRevision = styleRevision
+      this._rttCache.set(
+        tile,
+        rtt,
+        rtt.estimateBytes(),
+        this._rttGeometrySource,
+        this.getRttTileBufferExtent(),
+        this.getRttUvCorrection()
+      )
+      built++
+    }
+    this._rttCache.prune(renderer => renderer.destroy())
+  }
+
+  pickFeature(windowPosition, scene = this.scene) {
+    return this._featurePicker.pick(windowPosition, scene)
   }
 
   //强制更新
@@ -385,6 +501,12 @@ export class VectorTileset {
     }
 
     this._styleJson = null
+    if (this._rttCache) {
+      this._rttCache.destroy()
+      this._rttCache = null
+    }
+    this._styleRevision = null
+    this._featurePicker = null
   }
 
   isDestroyed() {

@@ -13,6 +13,7 @@ import Point from '@mapbox/point-geometry'
 import { subdivideVertexLine } from 'maplibre-gl/src/render/subdivision'
 import { granularitySettings } from './sources/granularitySettings'
 import { warnOnce } from 'maplibre-gl/src/util/util'
+import { TileRttRenderer } from './renderToMaterial/TileRttRenderer'
 
 let tileDepthRenderSate = null
 let nextTileKey = 0
@@ -141,6 +142,10 @@ export class VectorTileLOD {
      */
     this._workerEpoch = 0
     this.renderable = false
+    this._rttRenderer = null
+    this._rttDataRevision = 0
+    this._rttStyleRevision = -1
+    this._rttResolutionKey = -1
 
     this.tileId = {
       x: this.x,
@@ -200,6 +205,32 @@ export class VectorTileLOD {
       })
       this.children.push(child)
     }
+  }
+
+  _ensureRttRenderer(frameState, tileset) {
+    const bufferExtent = tileset.getRttTileBufferExtent()
+    const uvCorrection = tileset.getRttUvCorrection()
+    if (this._rttRenderer) return this._rttRenderer
+    const cached = tileset._rttCache?.get(
+      this,
+      tileset._rttGeometrySource,
+      bufferExtent,
+      uvCorrection
+    )
+    if (cached) {
+      this._rttRenderer = cached
+      return cached
+    }
+    this._rttRenderer = new TileRttRenderer({
+      tile: this,
+      context: frameState.context,
+      resolution: tileset.getRttResolution(this, frameState),
+      pass: Cesium.Pass.GLOBE,
+      geometrySource: tileset._rttGeometrySource,
+      bufferExtent,
+      uvCorrection
+    })
+    return this._rttRenderer
   }
 
   /**
@@ -314,6 +345,7 @@ export class VectorTileLOD {
         warnOnce('不支持图层类型' + styleLayer.type)
       }
       if ((!isBackgroundLayer && !sourceVectorTile) || !RenderLayer) continue
+      if (tileset.enableRttVector && styleLayer.type === 'fill') continue
 
       const features = []
       if (!isBackgroundLayer) {
@@ -353,7 +385,10 @@ export class VectorTileLOD {
       //将渲染图层分配到对应类型的图层渲染器，图层渲染器应实现如下功能，以提升渲染性能：
       //1、合批创建几何体、批次表和 DrawCommand；
       //2、克隆合批DrwaCommand，创建副本，通过offset和count指定图层的绘制范围。
-      if (LayerVisualizer) {
+      if (
+        LayerVisualizer &&
+        (!tileset.enableRttVector || styleLayer.type !== 'fill')
+      ) {
         let visualizer = visualizerMap[styleLayer.type]
         if (!visualizer) {
           visualizer = new LayerVisualizer(this)
@@ -365,6 +400,7 @@ export class VectorTileLOD {
     }
 
     this.state = 'ready'
+    this._rttDataRevision++
   }
 
   /**
@@ -387,25 +423,27 @@ export class VectorTileLOD {
     /**@type {Record<string,ILayerVisualizer>} */
     const visualizerMap = {}
 
-    for (const item of result.fill || []) {
-      const styleLayer = styleLayers.find(l => l.id === item.layerId)
-      if (!styleLayer) continue
-      const RenderLayer = RenderLayers.fill
-      const LayerVisualizer = LayerVisualizers.fill
-      const renderLayer = new RenderLayer([], styleLayer, this)
-      renderLayers.push(renderLayer)
-      let visualizer = visualizerMap.fill
-      if (!visualizer) {
-        visualizer = new LayerVisualizer(this)
-        visualizerMap.fill = visualizer
-        visualizers.push(visualizer)
+    if (!tileset.enableRttVector) {
+      for (const item of result.fill || []) {
+        const styleLayer = styleLayers.find(l => l.id === item.layerId)
+        if (!styleLayer) continue
+        const RenderLayer = RenderLayers.fill
+        const LayerVisualizer = LayerVisualizers.fill
+        const renderLayer = new RenderLayer([], styleLayer, this)
+        renderLayers.push(renderLayer)
+        let visualizer = visualizerMap.fill
+        if (!visualizer) {
+          visualizer = new LayerVisualizer(this)
+          visualizerMap.fill = visualizer
+          visualizers.push(visualizer)
+        }
+        visualizer.addLayerFromWorkerResult(
+          item,
+          renderLayer,
+          frameState,
+          tileset
+        )
       }
-      visualizer.addLayerFromWorkerResult(
-        item,
-        renderLayer,
-        frameState,
-        tileset
-      )
     }
 
     for (const item of result.line || []) {
@@ -451,6 +489,7 @@ export class VectorTileLOD {
     }
 
     this.state = 'ready'
+    this._rttDataRevision++
   }
 
   /**
@@ -629,7 +668,6 @@ export class VectorTileLOD {
     if (this.state === 'ready') {
       let visualizerReady = true,
         layersReady = true
-      //更新图层渲染器
       for (const visualizer of this.visualizers) {
         visualizer.update(frameState, tileset)
         if (visualizer.state === 'none') {
@@ -642,8 +680,30 @@ export class VectorTileLOD {
           layersReady = false
         }
       }
-      //标记瓦片是否可渲染
       this.renderable = visualizerReady && layersReady
+
+      if (tileset.enableRttVector) {
+        const rtt = this._ensureRttRenderer(frameState, tileset)
+        const bufferExtent = tileset.getRttTileBufferExtent()
+        const uvCorrection = tileset.getRttUvCorrection()
+        rtt.ensureBufferExtent(bufferExtent)
+        rtt.ensureUvCorrection(uvCorrection)
+        const resolution = tileset.getRttResolution(this, frameState)
+        if (rtt.ensureResolution(resolution)) {
+          this._rttResolutionKey = resolution
+        }
+        const styleRevision = tileset._styleRevision.revision
+        const needsRtt = rtt.needsRebuild(
+          this._rttDataRevision,
+          styleRevision,
+          resolution,
+          tileset._rttGeometrySource,
+          bufferExtent
+        )
+        if (needsRtt) {
+          renderList.rttBuildTiles.push(this)
+        }
+      }
     }
   }
 
@@ -656,13 +716,24 @@ export class VectorTileLOD {
     const tileIdCommands = this.tileIdCommands
     const tileDepthCommands = this.tileDepthCommands
 
-    //将渲染图层追加到相应的渲染队列（渲染队列内部按图层id分组，确保不同瓦片的同一个id图层都在一组内，然后按图层顺序逐组渲染）
-    for (const layer of this.layers) {
-      renderList.push(layer)
-    }
+    if (!tileset.enableRttVector) {
+      for (const layer of this.layers) {
+        renderList.push(layer)
+      }
 
-    for (const visualizer of this.visualizers) {
-      renderList.visualizers.push(visualizer)
+      for (const visualizer of this.visualizers) {
+        renderList.visualizers.push(visualizer)
+      }
+    } else {
+      for (const layer of this.layers) {
+        renderList.push(layer)
+      }
+      for (const visualizer of this.visualizers) {
+        renderList.visualizers.push(visualizer)
+      }
+      if (this._rttRenderer) {
+        this._rttRenderer.pushTileCommands(renderList, frameState)
+      }
     }
 
     //瓦片id纹理
@@ -687,6 +758,10 @@ export class VectorTileLOD {
       this.primitive = null
     }
     this.tileGeometry = null
+    if (this._rttRenderer) {
+      this._rttRenderer.destroy()
+      this._rttRenderer = null
+    }
 
     //清空瓦片克隆的 DrawCommand，不需要手动释放，相关资源在 primitive.destroy 执行时已经释放
     if (this.commandList) {
